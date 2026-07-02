@@ -6,19 +6,20 @@ datasource db {
 generator client {
   provider = "prisma-client-js"
 }
+
 // 1. Bảng Người dùng chung
 model User {
-  id          Int              @id @default(autoincrement())
-  email       String           @unique
-  password    String
-  fullName    String
-  role        String           // 'PATIENT' hoặc 'DOCTOR'
-  createdAt   DateTime         @default(now())
+  id                  Int            @id @default(autoincrement())
+  email               String         @unique
+  password            String
+  fullName            String
+  role                String         // 'PATIENT' hoặc 'DOCTOR'
+  createdAt           DateTime       @default(now())
   
   // Mối quan hệ
-  doctorProfile DoctorProfile?
-  patientAppointments Appointment[] @relation("PatientAppointments")
-  doctorAppointments  Appointment[] @relation("DoctorAppointments")
+  doctorProfile       DoctorProfile?
+  patientAppointments Appointment[]  @relation("PatientAppointments")
+  doctorAppointments  Appointment[]  @relation("DoctorAppointments")
   messages            MessageLog[]
 }
 
@@ -35,18 +36,18 @@ model DoctorProfile {
 
 // 3. Bảng Lịch hẹn khám
 model Appointment {
-  id              Int      @id @default(autoincrement())
+  id              Int                     @id @default(autoincrement())
   patientId       Int
   doctorId        Int
   appointmentDate DateTime
-  startTime       String   // Ví dụ: "09:00"
-  endTime         String   // Ví dụ: "09:30"
-  status          String   // 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'
-  createdAt       DateTime @default(now())
+  startTime       String                  // Ví dụ: "09:00"
+  endTime         String                  // Ví dụ: "09:30"
+  status          String                  // 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'
+  createdAt       DateTime                @default(now())
 
   // Mối quan hệ
-  patient         User     @relation("PatientAppointments", fields: [patientId], references: [id])
-  doctor          User     @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  patient         User                    @relation("PatientAppointments", fields: [patientId], references: [id])
+  doctor          User                    @relation("DoctorAppointments", fields: [doctorId], references: [id])
   
   prescriptions   Prescription[]
   callLogs        CallLog[]
@@ -106,12 +107,31 @@ model VitalSignsAI {
 
 // 8. Bảng Trợ lý AI tóm tắt bệnh án tự động từ cuộc gọi
 model AiConsultationSummary {
-  id                Int         @id @default(autoincrement())
-  appointmentId     Int
-  rawTranscript     String?     @db.LongText  // Toàn bộ cuộc hội thoại văn bản dịch từ voice
-  aiSummary         String?     @db.Text      // Đoạn tóm tắt bệnh lý do AI tự viết
-  suggestedMedicines String?    @db.Text      // Thuốc do AI đề xuất
-  createdAt         DateTime    @default(now())
+  id                 Int         @id @default(autoincrement())
+  appointmentId      Int
+  rawTranscript      String?     @db.LongText  // Toàn bộ cuộc hội thoại văn bản dịch từ voice
+  aiSummary          String?     @db.Text      // Đoạn tóm tắt bệnh lý do AI tự viết
+  suggestedMedicines String?     @db.Text      // Thuốc do AI đề xuất
+  createdAt          DateTime    @default(now())
 
-  appointment       Appointment @relation(fields: [appointmentId], references: [id])
+  appointment        Appointment @relation(fields: [appointmentId], references: [id])
+}
+
+// 9. Bảng phục vụ riêng cho Landing Page hiển thị danh sách bác sĩ ngoài trang chủ
+model Doctor {
+  id           Int      @id @default(autoincrement())
+  name         String
+  specialty    String
+  bio          String   @db.Text
+  avatarUrl    String?
+  featured     Boolean  @default(false) 
+  sortOrder    Int      @default(0)     
+  rating       Float    @default(5.0)
+  patientCount Int      @default(0)
+  yearsExp     Int      @default(0)
+  isOnline     Boolean  @default(false) 
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("doctors")
 }
