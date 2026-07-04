@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtModule } from '@nestjs/jwt';
-import { UsersService } from '../users/users.service';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { RolesGuard } from './roles.guard';
 
 @Module({
   imports: [
@@ -13,6 +14,6 @@ import { UsersService } from '../users/users.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, UsersService], // Đưa UsersService vào đây để dùng chung
+  providers: [AuthService, JwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}

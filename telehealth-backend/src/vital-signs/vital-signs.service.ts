@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreateVitalSignDto } from './dto/create-vital-sign.dto';
 import { UpdateVitalSignDto } from './dto/update-vital-sign.dto';
@@ -9,7 +9,7 @@ export class VitalSignsService {
   constructor(private readonly prisma: PrismaService) {}
 
   // 1. Logic lưu chỉ số sinh tồn AI quét từ Camera xuống bảng VitalSignsAI
-  async create(createVitalSignDto: CreateVitalSignDto) {
+  async create(createVitalSignDto: CreateVitalSignDto, user: { sub: number; role: string }) {
     const { appointmentId, heartRate, respiratoryRate, oxygenSaturation } = createVitalSignDto;
 
     // Kiểm tra xem cuộc hẹn (Appointment) có tồn tại thật không
@@ -19,6 +19,14 @@ export class VitalSignsService {
 
     if (!appointment) {
       throw new BadRequestException('Không tìm thấy cuộc hẹn hợp lệ để lưu chỉ số sinh tồn bạn ơi!');
+    }
+
+    if (user.role === 'DOCTOR' && appointment.doctorId !== user.sub) {
+      throw new ForbiddenException('Bác sĩ chỉ có thể lưu chỉ số cho lịch hẹn của chính mình!');
+    }
+
+    if (user.role === 'PATIENT') {
+      throw new ForbiddenException('Bệnh nhân không có quyền lưu chỉ số sinh tồn!');
     }
 
     // Lưu thẳng vào bảng vitalSignsAI theo chuẩn Schema của bạn
@@ -38,7 +46,23 @@ export class VitalSignsService {
   }
 
   // 2. Lấy danh sách chỉ số sinh tồn của một cuộc hẹn (để Frontend vẽ biểu đồ nhịp tim thời gian thực)
-  async findByAppointment(appointmentId: number) {
+  async findByAppointment(appointmentId: number, user: { sub: number; role: string }) {
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id: appointmentId },
+    });
+
+    if (!appointment) {
+      throw new BadRequestException('Không tìm thấy cuộc hẹn hợp lệ để tải chỉ số sinh tồn!');
+    }
+
+    if (user.role === 'PATIENT' && appointment.patientId !== user.sub) {
+      throw new ForbiddenException('Bạn chỉ có thể xem chỉ số của chính mình!');
+    }
+
+    if (user.role === 'DOCTOR' && appointment.doctorId !== user.sub) {
+      throw new ForbiddenException('Bác sĩ chỉ có thể xem chỉ số của chính mình!');
+    }
+
     const signs = await this.prisma.vitalSignsAI.findMany({
       where: { appointmentId },
       orderBy: { measuredAt: 'asc' }, // Sắp xếp thời gian tăng dần để vẽ đồ thị đường thẳng cực mượt

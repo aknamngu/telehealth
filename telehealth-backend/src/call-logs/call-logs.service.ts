@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreateCallLogDto } from './dto/create-call-log.dto';
 import { UpdateCallLogDto } from './dto/update-call-log.dto';
@@ -8,7 +8,7 @@ export class CallLogsService {
   constructor(private readonly prisma: PrismaService) {}
 
   // 1. Logic lưu nhật ký cuộc gọi mới khớp chuẩn Schema của bạn
-  async create(createCallLogDto: CreateCallLogDto) {
+  async create(createCallLogDto: CreateCallLogDto, user: { sub: number; role: string }) {
     const { appointmentId, roomName, duration, recordingUrl, disconnectReason } = createCallLogDto;
 
     // Kiểm tra xem lịch hẹn (Appointment) liên quan có tồn tại thật không
@@ -18,6 +18,14 @@ export class CallLogsService {
 
     if (!appointment) {
       throw new BadRequestException('Không tìm thấy lịch hẹn hợp lệ cho cuộc gọi này bạn ơi!');
+    }
+
+    if (user.role === 'DOCTOR' && appointment.doctorId !== user.sub) {
+      throw new ForbiddenException('Bác sĩ chỉ có thể tạo log cho lịch hẹn của chính mình!');
+    }
+
+    if (user.role === 'PATIENT') {
+      throw new ForbiddenException('Bệnh nhân không có quyền tạo log cuộc gọi!');
     }
 
     // Tiến hành tạo log cuộc gọi với các trường chuẩn đét
@@ -38,8 +46,16 @@ export class CallLogsService {
   }
 
   // 2. Logic lấy danh sách toàn bộ nhật ký cuộc gọi
-  async findAll() {
+  async findAll(user: { sub: number; role: string }) {
+    const where =
+      user.role === 'ADMIN'
+        ? undefined
+        : user.role === 'DOCTOR'
+          ? { appointment: { is: { doctorId: user.sub } } }
+          : { appointment: { is: { patientId: user.sub } } };
+
     const logs = await this.prisma.callLog.findMany({
+      where,
       include: {
         appointment: {
           include: {

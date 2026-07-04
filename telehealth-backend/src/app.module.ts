@@ -12,6 +12,7 @@ import { CallLogsModule } from './call-logs/call-logs.module';
 import { VitalSignsModule } from './vital-signs/vital-signs.module';
 import { AiSummariesModule } from './ai-summaries/ai-summaries.module';
 import { MessagesModule } from './messages/messages.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { MessagesModule } from './messages/messages.module';
     VitalSignsModule,
     AiSummariesModule,
     MessagesModule,
+    DashboardModule,
    
   ],
   controllers: [AppController],

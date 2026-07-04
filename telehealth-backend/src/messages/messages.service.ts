@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
@@ -9,8 +9,9 @@ export class MessagesService {
   constructor(private readonly prisma: PrismaService) {}
 
   // 1. Logic lưu tin nhắn mới chat real-time vào bảng MessageLog
-  async create(createMessageDto: CreateMessageDto) {
-    const { appointmentId, senderId, messageType, content } = createMessageDto;
+  async create(createMessageDto: CreateMessageDto, user: { sub: number; role: string }) {
+    const { appointmentId, messageType, content } = createMessageDto;
+    const senderId = user.sub;
 
     // Kiểm tra xem cuộc hẹn (Appointment) có tồn tại thật không
     const appointment = await this.prisma.appointment.findUnique({
@@ -18,6 +19,14 @@ export class MessagesService {
     });
     if (!appointment) {
       throw new BadRequestException('Không tìm thấy cuộc hẹn hợp lệ để lưu tin nhắn!');
+    }
+
+    if (user.role === 'PATIENT' && appointment.patientId !== user.sub) {
+      throw new ForbiddenException('Bạn chỉ có thể nhắn trong cuộc hẹn của chính mình!');
+    }
+
+    if (user.role === 'DOCTOR' && appointment.doctorId !== user.sub) {
+      throw new ForbiddenException('Bác sĩ chỉ có thể nhắn trong cuộc hẹn của chính mình!');
     }
 
     // Kiểm tra người gửi (User) có tồn tại không
@@ -45,7 +54,23 @@ export class MessagesService {
   }
 
   // 2. Lấy toàn bộ nội dung đoạn chat của 1 cuộc hẹn (để khi load phòng khám hiện lại tin nhắn cũ)
-  async findByAppointment(appointmentId: number) {
+  async findByAppointment(appointmentId: number, user: { sub: number; role: string }) {
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id: appointmentId },
+    });
+
+    if (!appointment) {
+      throw new BadRequestException('Không tìm thấy cuộc hẹn hợp lệ để tải tin nhắn!');
+    }
+
+    if (user.role === 'PATIENT' && appointment.patientId !== user.sub) {
+      throw new ForbiddenException('Bạn chỉ có thể xem chat của chính mình!');
+    }
+
+    if (user.role === 'DOCTOR' && appointment.doctorId !== user.sub) {
+      throw new ForbiddenException('Bác sĩ chỉ có thể xem chat của chính mình!');
+    }
+
     const chatHistory = await this.prisma.messageLog.findMany({
       where: { appointmentId },
       include: {

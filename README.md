@@ -1,15 +1,19 @@
 # DoAnTeleHealth
 
-Project telehealth gồm 2 phần:
+![CI](https://github.com/aknamngu/telehealth/actions/workflows/ci.yml/badge.svg?branch=main)
+![Docker Compose](https://img.shields.io/badge/docker--compose-ready-0ea5e9)
+![Stack](https://img.shields.io/badge/stack-NestJS%20%7C%20React%20%7C%20Prisma-111827)
 
-- `telehealth-backend`: NestJS API
-- `telehealth-frontend`: React + Vite UI
+Telehealth full-stack project với giao diện cao cấp, backend NestJS, frontend React + Vite, Prisma, Docker Compose và GitHub Actions.
 
-## Chạy local
+## Structure
 
-Yêu cầu: cài `Node.js` và `npm`.
+- `telehealth-backend`: API, Prisma, WebSocket, auth, appointments
+- `telehealth-frontend`: landing page và phòng khám online
 
-### 1) Cài dependency
+## Quick Start
+
+### Local dev
 
 ```bash
 cd telehealth-backend
@@ -18,26 +22,43 @@ npm install
 cd ../telehealth-frontend
 npm install
 ```
-
-### 2) Chạy backend
 
 ```bash
 cd telehealth-backend
 npm run start:dev
 ```
 
-API mặc định chạy ở `http://localhost:3000`.
-
-### 3) Chạy frontend
-
 ```bash
-cd telehealth-frontend
+cd ../telehealth-frontend
 npm run dev
 ```
 
-Frontend Vite sẽ in ra địa chỉ local, thường là `http://localhost:5173` hoặc cổng kế tiếp nếu cổng đó đang bận.
+### Docker profiles
 
-## Build kiểm tra
+```bash
+docker compose --profile dev up --build
+```
+
+- Frontend dev: `http://localhost:5173`
+- Backend dev: `http://localhost:3000`
+- DB: `localhost:3306`
+
+```bash
+docker compose --profile prod up --build
+```
+
+- Frontend prod: `http://localhost:4173`
+- Backend prod: `http://localhost:3000`
+- DB: `localhost:3306`
+
+## Environment
+
+Copy these files before running:
+
+- `telehealth-backend/.env.example` -> `telehealth-backend/.env`
+- `telehealth-frontend/.env.example` -> `telehealth-frontend/.env`
+
+## Build checks
 
 ```bash
 cd telehealth-backend
@@ -47,21 +68,22 @@ cd ../telehealth-frontend
 npm run build
 ```
 
-## Đẩy lên GitHub
+## CI
+
+GitHub Actions is configured in [\.github/workflows/ci.yml](.github/workflows/ci.yml) to build both apps on push and pull request.
+
+## GitHub workflow
 
 ```bash
-git init
 git add .
-git commit -m "Initial telehealth project"
-git branch -M main
-git remote add origin https://github.com/<username>/<repo>.git
-git push -u origin main
+git commit -m "Update telehealth project"
+git push origin main
 ```
 
-## Bạn của bạn tải về
+If your friend clones the repo:
 
 ```bash
-git clone https://github.com/<username>/<repo>.git
+git clone https://github.com/aknamngu/telehealth.git
 ```
 
-Sau đó chạy lại phần cài dependency và dev như trên.
+Then install dependencies and run either the local dev commands or the Docker profile commands above.

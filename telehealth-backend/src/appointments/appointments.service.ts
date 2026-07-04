@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
@@ -8,30 +8,40 @@ export class AppointmentsService {
   // Tiêm PrismaService vào để thao tác với database Docker
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(createAppointmentDto: CreateAppointmentDto) {
+  async create(createAppointmentDto: CreateAppointmentDto, user: { sub: number; role: string }) {
     const { patientId, doctorId, appointmentDate, startTime, endTime } = createAppointmentDto;
+    const resolvedPatientId = user.role === 'PATIENT' ? user.sub : patientId;
+    const resolvedDoctorId = user.role === 'DOCTOR' ? user.sub : doctorId;
 
     // 1. Kiểm tra xem Bệnh nhân (Patient) có tồn tại trong hệ thống không
     const patient = await this.prisma.user.findUnique({ 
-      where: { id: patientId } 
+      where: { id: resolvedPatientId } 
     });
-    if (!patient) {
+    if (!patient || patient.role !== 'PATIENT') {
       throw new BadRequestException('Bệnh nhân không tồn tại trên hệ thống rồi bạn ơi!');
     }
 
     // 2. Kiểm tra xem Bác sĩ (Doctor) có tồn tại và đúng role không
     const doctor = await this.prisma.user.findUnique({ 
-      where: { id: doctorId } 
+      where: { id: resolvedDoctorId } 
     });
     if (!doctor || doctor.role !== 'DOCTOR') {
       throw new BadRequestException('Bác sĩ không tồn tại hoặc không hợp lệ!');
     }
 
+    if (user.role === 'PATIENT' && user.sub !== resolvedPatientId) {
+      throw new ForbiddenException('Bạn chỉ có thể tạo lịch cho chính mình!');
+    }
+
+    if (user.role === 'DOCTOR' && user.sub !== resolvedDoctorId) {
+      throw new ForbiddenException('Bác sĩ chỉ có thể tạo lịch cho chính mình!');
+    }
+
     // 3. Tiến hành lưu lịch hẹn mới vào MySQL Docker
     const appointment = await this.prisma.appointment.create({
       data: {
-        patientId,
-        doctorId,
+        patientId: resolvedPatientId,
+        doctorId: resolvedDoctorId,
         appointmentDate: new Date(appointmentDate), // Ép kiểu chuỗi ngày thành Date Object
         startTime,
         endTime,
@@ -45,9 +55,17 @@ export class AppointmentsService {
     };
   }
 
-  async findAll() {
+  async findAll(user: { sub: number; role: string }) {
     // Bốc toàn bộ danh sách lịch hẹn lên, nối bảng lấy kèm tên bệnh nhân và bác sĩ cho trực quan
+    const where =
+      user.role === 'ADMIN'
+        ? undefined
+        : user.role === 'DOCTOR'
+          ? { doctorId: user.sub }
+          : { patientId: user.sub };
+
     const appointments = await this.prisma.appointment.findMany({
+      where,
       include: {
         patient: {
           select: { fullName: true, email: true }
@@ -65,7 +83,7 @@ export class AppointmentsService {
   }
 
   // Logic cập nhật trạng thái lịch hẹn (Duyệt/Hủy lịch)
-  async updateStatus(id: number, status: string) {
+  async updateStatus(id: number, status: string, user: { sub: number; role: string }) {
     // 1. Kiểm tra xem lịch hẹn này có tồn tại trong DB không
     const appointment = await this.prisma.appointment.findUnique({
       where: { id },
@@ -81,6 +99,10 @@ export class AppointmentsService {
       throw new BadRequestException('Trạng thái cập nhật không hợp lệ!');
     }
 
+    if (user.role === 'DOCTOR' && appointment.doctorId !== user.sub) {
+      throw new ForbiddenException('Bác sĩ chỉ có thể cập nhật lịch của chính mình!');
+    }
+
     // 3. Tiến hành cập nhật xuống MySQL Docker
     const updatedAppointment = await this.prisma.appointment.update({
       where: { id },
@@ -94,7 +116,11 @@ export class AppointmentsService {
   }
 
   // HÀM MỚI TÍCH HỢP TỔNG HỢP BỆNH ÁN AI: Bốc toàn bộ lịch sử y tế của một Bệnh nhân
-  async getPatientMedicalHistory(patientId: number) {
+  async getPatientMedicalHistory(patientId: number, user: { sub: number; role: string }) {
+    if (user.role === 'PATIENT' && user.sub !== patientId) {
+      throw new ForbiddenException('Bạn chỉ có thể xem lịch sử của chính mình!');
+    }
+
     // Tìm tất cả các cuộc hẹn của bệnh nhân này và gom toàn bộ dữ liệu vệ tinh liên quan
     const medicalHistory = await this.prisma.appointment.findMany({
       where: { 

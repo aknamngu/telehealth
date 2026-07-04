@@ -6,16 +6,18 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const port = Number(process.env.PORT ?? 3000);
+  const frontendOrigin = process.env.FRONTEND_URL ?? '*';
 
   // KÍCH HOẠT CORS: Cho phép mọi nguồn Frontend (React/Vite) kết nối vào Backend real-time
   app.enableCors({
-    origin: '*', 
+    origin: frontendOrigin,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
 
-  // Chạy ứng dụng tại cổng 3000 quen thuộc
-  await app.listen(process.env.PORT ?? 3000);
-  console.log(`🚀 Backend TeleHealth đang chạy mượt mà tại: http://localhost:3000`);
+  // Chạy ứng dụng tại cổng cấu hình trong .env
+  await app.listen(port);
+  console.log(`🚀 Backend TeleHealth đang chạy mượt mà tại: http://localhost:${port}`);
 }
 bootstrap();

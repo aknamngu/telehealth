@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param } from '@nestjs/common';
 import { DoctorsService } from './doctors.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 
@@ -16,5 +16,11 @@ export class DoctorsController {
   @Get()
   findAll() {
     return this.doctorsService.findAll();
+  }
+
+  // Cổng lấy chi tiết một bác sĩ: GET http://localhost:3000/doctors/:id
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.doctorsService.findOne(+id);
   }
 }

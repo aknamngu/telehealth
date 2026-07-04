@@ -18,6 +18,7 @@ import {
   Users,
   Video,
 } from 'lucide-react';
+import { getAuthToken } from './auth';
 
 interface Doctor {
   id: number;
@@ -28,6 +29,25 @@ interface Doctor {
   rating: number;
   patientCount: number;
   isOnline: boolean;
+}
+
+interface ApiDoctorProfile {
+  specialty?: string;
+  experienceYears?: number;
+  bio?: string | null;
+}
+
+interface ApiDoctorUser {
+  id: number;
+  email: string;
+  fullName: string;
+  role: string;
+  doctorProfile?: ApiDoctorProfile | null;
+}
+
+interface ApiWrapper<T> {
+  message?: string;
+  data: T;
 }
 
 const services = [
@@ -90,16 +110,30 @@ const partnerLogos = [
   'Doanh nghiệp',
 ];
 
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+
 function Home() {
   const navigate = useNavigate();
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:3000/doctors')
+    fetch(`${API_URL}/doctors`)
       .then((response) => response.json())
-      .then((data) => {
-        setDoctors(data);
+      .then((payload: ApiWrapper<ApiDoctorUser[]> | ApiDoctorUser[]) => {
+        const records = Array.isArray(payload) ? payload : payload.data;
+        const normalizedDoctors = records.map((doctor) => ({
+          id: doctor.id,
+          name: doctor.fullName,
+          specialty: doctor.doctorProfile?.specialty ?? 'Đa khoa',
+          bio: doctor.doctorProfile?.bio ?? '',
+          yearsExp: doctor.doctorProfile?.experienceYears ?? 0,
+          rating: 5,
+          patientCount: 0,
+          isOnline: false,
+        }));
+
+        setDoctors(normalizedDoctors);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -142,6 +176,13 @@ function Home() {
           </nav>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate(getAuthToken() ? '/dashboard' : '/login')}
+              className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700 lg:inline-flex"
+            >
+              Dashboard
+              <BadgeCheck className="h-4 w-4" />
+            </button>
             <a
               href="tel:0886805115"
               className="hidden items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-700 transition hover:border-sky-200 hover:bg-sky-100 sm:inline-flex"
@@ -198,6 +239,13 @@ function Home() {
                   Khám phá dịch vụ
                   <PlayCircle className="h-4 w-4" />
                 </a>
+                <button
+                  onClick={() => navigate(getAuthToken() ? '/dashboard' : '/login')}
+                  className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-6 py-3.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100"
+                >
+                  Xem dashboard
+                  <BadgeCheck className="h-4 w-4" />
+                </button>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-3">

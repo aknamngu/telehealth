@@ -25,6 +25,27 @@ interface Message {
   time: string;
 }
 
+interface ApiDoctorProfile {
+  specialty?: string;
+  experienceYears?: number;
+  bio?: string | null;
+}
+
+interface ApiDoctorUser {
+  id: number;
+  email: string;
+  fullName: string;
+  role: string;
+  doctorProfile?: ApiDoctorProfile | null;
+}
+
+interface ApiWrapper<T> {
+  message?: string;
+  data: T;
+}
+
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+
 function Clinic() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -44,14 +65,22 @@ function Clinic() {
       return;
     }
 
-    fetch(`http://localhost:3000/doctors/${docId}`)
+    fetch(`${API_URL}/doctors/${docId}`)
       .then((response) => {
         if (!response.ok) {
           throw new Error('Doctor not found');
         }
         return response.json();
       })
-      .then(setDoctor)
+      .then((payload: ApiWrapper<ApiDoctorUser> | ApiDoctorUser) => {
+        const doctor = Array.isArray(payload) ? payload[0] : 'data' in payload ? payload.data : payload;
+
+        setDoctor({
+          id: doctor.id,
+          name: doctor.fullName,
+          specialty: doctor.doctorProfile?.specialty ?? 'Đa khoa',
+        });
+      })
       .catch(() => setDoctor(fallback));
   }, [docId]);
 

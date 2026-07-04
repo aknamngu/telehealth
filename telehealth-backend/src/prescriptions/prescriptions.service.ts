@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { UpdatePrescriptionDto } from './dto/update-prescription.dto';
@@ -9,7 +9,7 @@ export class PrescriptionsService {
   constructor(private readonly prisma: PrismaService) {}
 
   // 1. Logic tạo đơn thuốc mới lưu xuống MySQL Docker
-  async create(createPrescriptionDto: CreatePrescriptionDto) {
+  async create(createPrescriptionDto: CreatePrescriptionDto, user: { sub: number; role: string }) {
     const { appointmentId, diagnosis, medicines } = createPrescriptionDto;
 
     // Kiểm tra xem lịch hẹn (Appointment) này có tồn tại thật không
@@ -19,6 +19,14 @@ export class PrescriptionsService {
 
     if (!appointment) {
       throw new BadRequestException('Không tìm thấy lịch hẹn hợp lệ để kê đơn thuốc bạn ơi!');
+    }
+
+    if (user.role === 'DOCTOR' && appointment.doctorId !== user.sub) {
+      throw new ForbiddenException('Bác sĩ chỉ có thể kê đơn cho lịch hẹn của chính mình!');
+    }
+
+    if (user.role === 'PATIENT') {
+      throw new ForbiddenException('Bệnh nhân không có quyền kê đơn thuốc!');
     }
 
     // Tiến hành tạo đơn thuốc lưu vào DB
@@ -37,8 +45,16 @@ export class PrescriptionsService {
   }
 
   // 2. Logic lấy danh sách toàn bộ đơn thuốc kèm thông tin lịch hẹn liên quan
-  async findAll() {
+  async findAll(user: { sub: number; role: string }) {
+    const where =
+      user.role === 'ADMIN'
+        ? undefined
+        : user.role === 'DOCTOR'
+          ? { appointment: { is: { doctorId: user.sub } } }
+          : { appointment: { is: { patientId: user.sub } } };
+
     const prescriptions = await this.prisma.prescription.findMany({
+      where,
       include: {
         appointment: {
           include: {

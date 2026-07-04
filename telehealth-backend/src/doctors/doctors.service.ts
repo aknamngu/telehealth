@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
@@ -52,7 +52,25 @@ export class DoctorsService {
   }
 
   findOne(id: number) {
-    return `This action returns a #${id} doctor`;
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        doctorProfile: true,
+      },
+    }).then((doctor) => {
+      if (!doctor || doctor.role !== 'DOCTOR') {
+        throw new NotFoundException('Không tìm thấy bác sĩ phù hợp!');
+      }
+
+      return {
+        message: 'Lấy chi tiết bác sĩ thành công!',
+        data: doctor,
+      };
+    });
   }
 
   update(id: number, updateDoctorDto: UpdateDoctorDto) {
