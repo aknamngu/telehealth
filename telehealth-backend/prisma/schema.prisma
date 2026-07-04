@@ -1,0 +1,137 @@
+datasource db {
+  provider = "mysql"
+ 
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. Bảng Người dùng chung
+model User {
+  id                  Int            @id @default(autoincrement())
+  email               String         @unique
+  password            String
+  fullName            String
+  role                String         // 'PATIENT' hoặc 'DOCTOR'
+  createdAt           DateTime       @default(now())
+  
+  // Mối quan hệ
+  doctorProfile       DoctorProfile?
+  patientAppointments Appointment[]  @relation("PatientAppointments")
+  doctorAppointments  Appointment[]  @relation("DoctorAppointments")
+  messages            MessageLog[]
+}
+
+// 2. Bảng thông tin riêng của Bác sĩ
+model DoctorProfile {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @unique
+  specialty       String   // Chuyên khoa
+  experienceYears Int      // Số năm kinh nghiệm
+  bio             String?  @db.Text
+  
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+// 3. Bảng Lịch hẹn khám
+model Appointment {
+  id              Int                     @id @default(autoincrement())
+  patientId       Int
+  doctorId        Int
+  appointmentDate DateTime
+  startTime       String                  // Ví dụ: "09:00"
+  endTime         String                  // Ví dụ: "09:30"
+  status          String                  // 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'
+  createdAt       DateTime                @default(now())
+
+  // Mối quan hệ
+  patient         User                    @relation("PatientAppointments", fields: [patientId], references: [id])
+  doctor          User                    @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  
+  prescriptions   Prescription[]
+  callLogs        CallLog[]
+  messageLogs     MessageLog[]
+  vitalSigns      VitalSignsAI[]
+  aiSummaries     AiConsultationSummary[]
+}
+
+// 4. Bảng Đơn thuốc điện tử
+model Prescription {
+  id            Int         @id @default(autoincrement())
+  appointmentId Int
+  diagnosis     String      @db.Text // Chẩn đoán bệnh
+  medicines     String      @db.Text // Danh sách thuốc dạng text/JSON
+  createdAt     DateTime    @default(now())
+
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+}
+
+// 5. Bảng Nhật ký cuộc gọi Video (Hệ thống phục hồi khi rớt mạng)
+model CallLog {
+  id               Int         @id @default(autoincrement())
+  appointmentId    Int
+  roomName         String      // Mã phòng gọi
+  duration         Int?        // Thời lượng cuộc gọi (giây)
+  recordingUrl     String?     // Link video ghi hình cuộc khám trên Cloud
+  disconnectReason String?     // 'NETWORK_DROP', 'USER_HANGUP'
+  createdAt        DateTime    @default(now())
+
+  appointment      Appointment @relation(fields: [appointmentId], references: [id])
+}
+
+// 6. Bảng Chat Real-time trong phòng khám
+model MessageLog {
+  id            Int         @id @default(autoincrement())
+  appointmentId Int
+  senderId      Int
+  messageType   String      // 'TEXT', 'IMAGE', 'FILE'
+  content       String      @db.Text
+  createdAt     DateTime    @default(now())
+
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  sender        User        @relation(fields: [senderId], references: [id])
+}
+
+// 7. Bảng Phân tích chỉ số sinh tồn AI qua Camera (Real-time nhịp tim)
+model VitalSignsAI {
+  id            Int         @id @default(autoincrement())
+  appointmentId Int
+  heartRate     Float?      // Nhịp tim (bpm)
+  respiratoryRate Float?    // Nhịp thở
+  oxygenSaturation Float?   // SpO2 (%)
+  measuredAt    DateTime    @default(now())
+
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+}
+
+// 8. Bảng Trợ lý AI tóm tắt bệnh án tự động từ cuộc gọi
+model AiConsultationSummary {
+  id                 Int         @id @default(autoincrement())
+  appointmentId      Int
+  rawTranscript      String?     @db.LongText  // Toàn bộ cuộc hội thoại văn bản dịch từ voice
+  aiSummary          String?     @db.Text      // Đoạn tóm tắt bệnh lý do AI tự viết
+  suggestedMedicines String?     @db.Text      // Thuốc do AI đề xuất
+  createdAt          DateTime    @default(now())
+
+  appointment        Appointment @relation(fields: [appointmentId], references: [id])
+}
+
+// 9. Bảng phục vụ riêng cho Landing Page hiển thị danh sách bác sĩ ngoài trang chủ
+model Doctor {
+  id           Int      @id @default(autoincrement())
+  name         String
+  specialty    String
+  bio          String   @db.Text
+  avatarUrl    String?
+  featured     Boolean  @default(false) 
+  sortOrder    Int      @default(0)     
+  rating       Float    @default(5.0)
+  patientCount Int      @default(0)
+  yearsExp     Int      @default(0)
+  isOnline     Boolean  @default(false) 
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("doctors")
+}

@@ -1,0 +1,109 @@
+services:
+  db:
+    image: mysql:8.4
+    container_name: telehealth-db
+    restart: unless-stopped
+    profiles:
+      - dev
+      - prod
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: telehealth_db
+      MYSQL_USER: telehealth
+      MYSQL_PASSWORD: telehealth123
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend-dev:
+    build:
+      context: ./telehealth-backend
+      dockerfile: Dockerfile
+    container_name: telehealth-backend
+    restart: unless-stopped
+    profiles:
+      - dev
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      FRONTEND_URL: http://localhost:5173
+      DATABASE_URL: mysql://telehealth:telehealth123@db:3306/telehealth_db
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./telehealth-backend:/app
+      - backend_node_modules:/app/node_modules
+    command: npm run start:dev
+
+  frontend-dev:
+    build:
+      context: ./telehealth-frontend
+      dockerfile: Dockerfile
+    container_name: telehealth-frontend
+    restart: unless-stopped
+    profiles:
+      - dev
+    depends_on:
+      - backend-dev
+    environment:
+      VITE_API_URL: http://localhost:3000
+      VITE_SOCKET_URL: http://localhost:3000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./telehealth-frontend:/app
+      - frontend_node_modules:/app/node_modules
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+
+  backend-prod:
+    build:
+      context: ./telehealth-backend
+      dockerfile: Dockerfile
+    container_name: telehealth-backend-prod
+    restart: unless-stopped
+    profiles:
+      - prod
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      FRONTEND_URL: http://localhost:4173
+      DATABASE_URL: mysql://telehealth:telehealth123@db:3306/telehealth_db
+    ports:
+      - "3000:3000"
+    command: sh -c "npx prisma generate && npm run build && npm run start:prod"
+
+  frontend-prod:
+    build:
+      context: ./telehealth-frontend
+      dockerfile: Dockerfile
+    container_name: telehealth-frontend-prod
+    restart: unless-stopped
+    profiles:
+      - prod
+    depends_on:
+      - backend-prod
+    environment:
+      VITE_API_URL: http://localhost:3000
+      VITE_SOCKET_URL: http://localhost:3000
+    ports:
+      - "4173:4173"
+    command: sh -c "npm run build && npm run preview -- --host 0.0.0.0 --port 4173"
+
+volumes:
+  db_data:
+  backend_node_modules:
+  frontend_node_modules:
