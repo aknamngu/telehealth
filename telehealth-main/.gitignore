@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# build output
+dist/
+build/
+coverage/
+**/dist/
+**/build/
+**/coverage/
+
+# environment files
+.env
+.env.*
+**/.env
+**/.env.*
+
+# logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# prisma / generated artifacts
+**/generated/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# editor files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
