@@ -56,6 +56,24 @@ function Clinic() {
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  // Thêm vào trong component Clinic, dưới các dòng useState hiện có
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+
+  // Thêm logic khởi động Camera
+  useEffect(() => {
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        }
+      } catch (error) {
+        console.error("Lỗi webcam:", error);
+        alert("Hãy cấp quyền truy cập Camera để bắt đầu khám!");
+      }
+    }
+    startCamera();
+  }, []);
 
   useEffect(() => {
     const fallback: Doctor = { id: 1, name: 'BS. Trực tuyến', specialty: 'Đa khoa' };
@@ -205,11 +223,15 @@ function Clinic() {
                     Camera
                   </span>
                 </div>
-                <div className="mt-4 grid h-24 place-items-center rounded-2xl bg-black/20 text-center">
-                  <div>
-                    <div className="text-3xl">👤</div>
-                    <p className="mt-2 text-xs font-semibold text-slate-200">Bệnh nhân</p>
-                  </div>
+          
+                <div className="mt-4 grid h-24 w-full overflow-hidden rounded-2xl bg-black/20 text-center">
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className="h-full w-full object-cover"
+                  />
                 </div>
               </div>
             </div>

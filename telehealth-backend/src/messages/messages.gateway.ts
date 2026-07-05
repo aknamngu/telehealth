@@ -9,7 +9,6 @@ import { Server, Socket } from 'socket.io';
 import { MessagesService } from './messages.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 
-// Mở cổng Gateway cho phép mọi nguồn (CORS) kết nối vào để chat
 @WebSocketGateway({
   cors: {
     origin: '*',
@@ -21,17 +20,14 @@ export class MessagesGateway {
 
   constructor(private readonly messagesService: MessagesService) {}
 
-  // Khi có ai đó kết nối vào phòng chat
   handleConnection(client: Socket) {
     console.log(`🔌 Thiết bị vừa kết nối Socket: ${client.id}`);
   }
 
-  // Khi có ai đó ngắt kết nối
   handleDisconnect(client: Socket) {
     console.log(`❌ Thiết bị đã ngắt kết nối Socket: ${client.id}`);
   }
 
-  // Người dùng tham gia vào phòng khám cụ thể (Join Room theo appointmentId)
   @SubscribeMessage('joinRoom')
   handleJoinRoom(
     @MessageBody('appointmentId') appointmentId: number,
@@ -42,18 +38,24 @@ export class MessagesGateway {
     return { status: 'SUCCESS', message: `Đã vào phòng room_${appointmentId}` };
   }
 
-  // Lắng nghe event 'sendMessage' từ Frontend gửi lên
   @SubscribeMessage('sendMessage')
   async handleMessage(
-    @MessageBody() createMessageDto: CreateMessageDto,
+    @MessageBody() createMessageDto: CreateMessageDto & { senderId: number; senderRole: string }, // Nhận thêm thông tin người gửi từ frontend bọc kèm trong payload
     @ConnectedSocket() client: Socket,
   ) {
-    // 1. Lưu tin nhắn vào MySQL Docker thông qua Service đã có sẵn
-    const savedMessage = await this.messagesService.create(createMessageDto);
+    // Trích xuất thông tin user từ payload dto gửi lên để truyền vào Service
+    const mockUserFromToken = {
+      sub: createMessageDto.senderId,
+      role: createMessageDto.senderRole || 'PATIENT',
+    };
 
-    // 2. Bắn tin nhắn real-time tới TẤT CẢ mọi người đang ở trong phòng khám đó (bao gồm cả Bác sĩ & Bệnh nhân)
+    // 1. Lưu tin nhắn vào DB, truyền đủ 2 tham số để hết lỗi Expected 2 arguments
+    const savedMessage = await this.messagesService.create(createMessageDto, mockUserFromToken);
+
+    // 2. Bắn tin nhắn real-time tới phòng chat
     this.server.to(`room_${createMessageDto.appointmentId}`).emit('newMessage', savedMessage.data);
 
     return savedMessage;
   }
 }
+

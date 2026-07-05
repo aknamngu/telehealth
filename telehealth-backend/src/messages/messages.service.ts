@@ -5,15 +5,12 @@ import { UpdateMessageDto } from './dto/update-message.dto';
 
 @Injectable()
 export class MessagesService {
-  // Tiêm PrismaService thần thánh vào
   constructor(private readonly prisma: PrismaService) {}
 
-  // 1. Logic lưu tin nhắn mới chat real-time vào bảng MessageLog
   async create(createMessageDto: CreateMessageDto, user: { sub: number; role: string }) {
     const { appointmentId, messageType, content } = createMessageDto;
     const senderId = user.sub;
 
-    // Kiểm tra xem cuộc hẹn (Appointment) có tồn tại thật không
     const appointment = await this.prisma.appointment.findUnique({
       where: { id: appointmentId },
     });
@@ -29,15 +26,14 @@ export class MessagesService {
       throw new ForbiddenException('Bác sĩ chỉ có thể nhắn trong cuộc hẹn của chính mình!');
     }
 
-    // Kiểm tra người gửi (User) có tồn tại không
-    const user = await this.prisma.user.findUnique({
+    // ĐỔI TÊN BIẾN Ở ĐÂY ĐỂ KHÔNG TRÙNG VỚI THAM SỐ 'user'
+    const sender = await this.prisma.user.findUnique({
       where: { id: senderId },
     });
-    if (!user) {
+    if (!sender) {
       throw new BadRequestException('Người gửi không tồn tại trên hệ thống!');
     }
 
-    // Lưu thẳng vào bảng messageLog theo đúng Schema
     const messageLog = await this.prisma.messageLog.create({
       data: {
         appointmentId,
