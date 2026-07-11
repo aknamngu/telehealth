@@ -57,5 +57,24 @@ export class MessagesGateway {
 
     return savedMessage;
   }
+
+  // Thêm 3 hàm này vào trong class MessagesGateway (file messages.gateway.ts)
+@SubscribeMessage('offer')
+handleOffer(@MessageBody() offer: any, @ConnectedSocket() client: Socket) {
+  client.broadcast.emit('offer', offer);
 }
+
+@SubscribeMessage('answer')
+handleAnswer(@MessageBody() answer: any, @ConnectedSocket() client: Socket) {
+  client.broadcast.emit('answer', answer);
+}
+
+@SubscribeMessage('candidate')
+handleCandidate(@MessageBody() candidate: any, @ConnectedSocket() client: Socket) {
+  client.broadcast.emit('candidate', candidate);
+}
+  
+}
+
+
 

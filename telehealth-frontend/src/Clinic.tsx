@@ -1,3 +1,4 @@
+import { socket } from './socket';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -58,6 +59,10 @@ function Clinic() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   // Thêm vào trong component Clinic, dưới các dòng useState hiện có
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  // Thêm vào ngay dưới dòng: const [messages, setMessages] = useState<Message[]>([]);
+  const peerConnection = useRef<RTCPeerConnection | null>(null);
+  // Giả định bạn đã có biến socket được khởi tạo từ một file khác hoặc context
+  // Nếu chưa có, bạn cần import { socket } from './socket-client'; (hoặc đường dẫn đến file khởi tạo socket của bạn)
 
   // Thêm logic khởi động Camera
   useEffect(() => {
@@ -117,6 +122,66 @@ function Clinic() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+    // Thêm vào sau useEffect của Camera
+useEffect(() => {
+  // 1. Cấu hình WebRTC
+  peerConnection.current = new RTCPeerConnection({
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  });
+
+  // 2. Gửi ICE Candidate cho bác sĩ
+  peerConnection.current.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit('candidate', { candidate: event.candidate, appointmentId: docId });
+    }
+  };
+
+  // 3. Xử lý khi nhận luồng video từ bác sĩ
+  peerConnection.current.ontrack = (event) => {
+    if (doctorVideoRef.current) {
+      doctorVideoRef.current.srcObject = event.streams[0];
+    }
+  };
+
+  // 4. LẮNG NGHE TÍN HIỆU TỪ BÁC SĨ (CỰC KỲ QUAN TRỌNG)
+  socket.on('offer', async (offer) => {
+    await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peerConnection.current?.createAnswer();
+    await peerConnection.current?.setLocalDescription(answer);
+    socket.emit('answer', { answer, appointmentId: docId });
+    setIsCallStarted(true);
+  });
+
+  socket.on('answer', async (answer) => {
+    await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(answer));
+  });
+
+  socket.on('candidate', (candidate) => {
+    peerConnection.current?.addIceCandidate(new RTCIceCandidate(candidate));
+  });
+
+  return () => {
+    socket.off('offer');
+    socket.off('answer');
+    socket.off('candidate');
+  };
+}, [docId]); // Thêm docId vào dependency
+
+    // Thêm đoạn này vào trong component Clinic
+  useEffect(() => {
+    socket.connect();
+    
+    // BẮT BUỘC: Gộp socket vào đúng phòng theo mã cuộc hẹn
+    if (docId) {
+      socket.emit('joinRoom', docId);
+    }
+    
+    return () => {
+      socket.disconnect();
+    };
+  }, [docId]);
+
+
   const handleSend = (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -135,6 +200,26 @@ function Clinic() {
     setChatInput('');
   };
 
+  const startCall = async () => {
+  if (!peerConnection.current) return;
+
+  // Thêm luồng video của mình vào kết nối trước khi tạo offer
+  const localStream = localVideoRef.current?.srcObject as MediaStream;
+  localStream.getTracks().forEach(track => {
+    peerConnection.current?.addTrack(track, localStream);
+  });
+
+  // Tạo offer
+  const offer = await peerConnection.current.createOffer();
+  await peerConnection.current.setLocalDescription(offer);
+
+  // Gửi offer KÈM appointmentId
+  socket.emit('offer', { offer, appointmentId: docId });
+  setIsCallStarted(true);
+};
+
+  const doctorVideoRef = useRef<HTMLVideoElement>(null); // Thêm dòng này
+  const [isCallStarted, setIsCallStarted] = useState(false);
   return (
     <div className="min-h-screen text-slate-900">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.16),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.12),_transparent_28%),linear-gradient(180deg,_#f8fafc_0%,_#edf5ff_50%,_#f8fafc_100%)]" />
@@ -193,6 +278,13 @@ function Clinic() {
               <div className="flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700">
                 <ShieldCheck className="h-4 w-4" />
                 Kết nối bảo mật
+                <button
+                  onClick={startCall}
+                  className="flex items-center gap-2 rounded-full border border-sky-600 bg-sky-600 px-4 py-2 text-sm font-bold text-white shadow-lg transition hover:bg-sky-700"
+                >
+                  <Video className="h-4 w-4" />
+                  Bắt đầu gọi
+                </button>
               </div>
             </div>
 
@@ -216,23 +308,38 @@ function Clinic() {
                 </div>
               </div>
 
-              <div className="absolute bottom-5 right-5 w-44 rounded-3xl border border-white/10 bg-white/10 p-4 text-white backdrop-blur-xl shadow-2xl shadow-slate-950/20">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-100/80">Bạn</p>
-                  <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white/80">
-                    Camera
-                  </span>
-                </div>
-          
-                <div className="mt-4 grid h-24 w-full overflow-hidden rounded-2xl bg-black/20 text-center">
-                  <video
-                    ref={localVideoRef}
-                    autoPlay
-                    muted
-                    playsInline
-                    className="h-full w-full object-cover"
+              <div className="relative w-full h-[400px] rounded-3xl overflow-hidden bg-slate-900 shadow-2xl">
+                
+                {/* 1. Màn hình Bác sĩ (Chiếm trọn ô bự) */}
+                <video 
+                  ref={doctorVideoRef} 
+                  autoPlay 
+                  playsInline 
+                  className="w-full h-full object-cover" 
+                />
+
+                {/* Lớp phủ thông tin bác sĩ (hiển thị khi chưa có kết nối) */}
+                {!isCallStarted && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-sm text-white">
+                    <div className="p-4 rounded-full bg-white/10 mb-4">
+                      {/* Icon ống nghe của bạn */}
+                    </div>
+                    <p className="text-xl font-bold">Đang thiết lập phiên tư vấn an toàn</p>
+                  </div>
+                )}
+
+                {/* 2. Khung video của BẠN (Nằm nhỏ ở góc dưới bên phải) */}
+                <div className="absolute bottom-5 right-5 w-48 h-32 rounded-2xl border border-white/20 bg-black/50 overflow-hidden shadow-lg">
+                  <video 
+                    ref={localVideoRef} 
+                    autoPlay 
+                    muted 
+                    playsInline 
+                    className="w-full h-full object-cover" 
                   />
+                  <div className="absolute top-2 left-2 bg-black/50 px-2 py-0.5 rounded text-[10px] text-white">BẠN</div>
                 </div>
+
               </div>
             </div>
           </div>
