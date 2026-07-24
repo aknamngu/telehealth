@@ -5,6 +5,7 @@ import Clinic from './Clinic';
 import Dashboard from './Dashboard';
 import Login from './Login';
 import { getAuthToken } from './auth';
+import Consultation from './pages/Consultation'; // Import component mới tạo
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -15,7 +16,6 @@ function RequireAuth({ children }: { children: ReactNode }) {
 
   return children;
 }
-
 function App() {
   return (
     <Router>
@@ -30,6 +30,15 @@ function App() {
               <Dashboard />
             </RequireAuth>
           }
+        />
+        {/* Đưa Route này vào bên trong Routes */}
+        <Route 
+          path="/consultation/:appointmentId" 
+          element={
+            <RequireAuth>
+              <Consultation />
+            </RequireAuth>
+          } 
         />
       </Routes>
     </Router>

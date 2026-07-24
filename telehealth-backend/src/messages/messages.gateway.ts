@@ -28,15 +28,6 @@ export class MessagesGateway {
     console.log(`❌ Thiết bị đã ngắt kết nối Socket: ${client.id}`);
   }
 
-  @SubscribeMessage('joinRoom')
-  handleJoinRoom(
-    @MessageBody('appointmentId') appointmentId: number,
-    @ConnectedSocket() client: Socket,
-  ) {
-    client.join(`room_${appointmentId}`);
-    console.log(`👤 Socket ${client.id} đã tham gia vào phòng khám #${appointmentId}`);
-    return { status: 'SUCCESS', message: `Đã vào phòng room_${appointmentId}` };
-  }
 
   @SubscribeMessage('sendMessage')
   async handleMessage(
@@ -58,22 +49,54 @@ export class MessagesGateway {
     return savedMessage;
   }
 
-  // Thêm 3 hàm này vào trong class MessagesGateway (file messages.gateway.ts)
-@SubscribeMessage('offer')
-handleOffer(@MessageBody() offer: any, @ConnectedSocket() client: Socket) {
-  client.broadcast.emit('offer', offer);
-}
 
 @SubscribeMessage('answer')
-handleAnswer(@MessageBody() answer: any, @ConnectedSocket() client: Socket) {
-  client.broadcast.emit('answer', answer);
+handleAnswer(@MessageBody() payload: { answer: any; appointmentId: string }, @ConnectedSocket() client: Socket) {
+  client.to(`room_${payload.appointmentId}`).emit('answer', payload.answer);
 }
 
 @SubscribeMessage('candidate')
-handleCandidate(@MessageBody() candidate: any, @ConnectedSocket() client: Socket) {
-  client.broadcast.emit('candidate', candidate);
+handleCandidate(@MessageBody() payload: { candidate: any; appointmentId: string }, @ConnectedSocket() client: Socket) {
+  client.to(`room_${payload.appointmentId}`).emit('candidate', payload.candidate);
 }
-  
+
+
+@SubscribeMessage('joinRoom')
+handleJoinRoom(
+  @MessageBody() appointmentId: string, // Nhận ID từ URL
+  @ConnectedSocket() client: Socket
+) {
+  client.join(`room_${appointmentId}`); // Gộp client vào phòng
+}
+
+// Cập nhật lại các event offer/answer/candidate như sau:
+@SubscribeMessage('offer')
+handleOffer(@MessageBody() payload: { offer: any, appointmentId: string }, @ConnectedSocket() client: Socket) {
+  client.to(`room_${payload.appointmentId}`).emit('offer', payload.offer);
+}
+@SubscribeMessage('call:invite')
+handleCallInvite(
+  @MessageBody() payload: { appointmentId: string; fromName: string; fromRole: string },
+  @ConnectedSocket() client: Socket,
+) {
+  client.to(`room_${payload.appointmentId}`).emit('call:invite', payload);
+}
+
+@SubscribeMessage('call:accept')
+handleCallAccept(
+  @MessageBody() payload: { appointmentId: string },
+  @ConnectedSocket() client: Socket,
+) {
+  client.to(`room_${payload.appointmentId}`).emit('call:accept', payload);
+}
+
+@SubscribeMessage('call:decline')
+handleCallDecline(
+  @MessageBody() payload: { appointmentId: string },
+  @ConnectedSocket() client: Socket,
+) {
+  client.to(`room_${payload.appointmentId}`).emit('call:decline', payload);
+}
 }
 
 

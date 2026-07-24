@@ -440,7 +440,13 @@ function Dashboard() {
               <div key={appointment.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
                 <p className="font-bold text-slate-900">{appointment.doctor?.fullName ?? '---'}</p>
                 <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate)} · {appointment.startTime} - {appointment.endTime}</p>
-              </div>
+                <button 
+                  onClick={() => navigate(`/consultation/${appointment.id}`)}
+                  className="mt-3 block w-full rounded-full bg-sky-600 px-4 py-2 text-center text-sm font-bold text-white transition hover:bg-sky-700"
+                >
+                  Vào phòng khám
+                </button>    
+              </div>          
             ))}
           </div>
         </section>
@@ -522,6 +528,12 @@ function Dashboard() {
               <div key={appointment.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
                 <p className="font-bold text-slate-900">{appointment.patient?.fullName ?? '---'}</p>
                 <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate)} · {appointment.startTime} - {appointment.endTime}</p>
+                <button 
+                  onClick={() => navigate(`/clinic?doc/${appointment.id}`)}
+                  className="mt-3 block w-full rounded-full bg-emerald-600 px-4 py-2 text-center text-sm font-bold text-white transition hover:bg-emerald-700"
+                >
+                  Vào phòng khám
+                </button>
               </div>
             ))}
           </div>
