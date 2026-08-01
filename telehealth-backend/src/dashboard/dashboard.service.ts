@@ -192,7 +192,7 @@ export class DashboardService {
       }),
     ]);
 
-    const upcomingAppointments = appointments.filter((appointment) => appointment.status !== 'COMPLETED').slice(0, 5);
+    const upcomingAppointments = appointments.filter((appointment) => appointment.status !== 'COMPLETED');
     const completedAppointments = appointments.filter((appointment) => appointment.status === 'COMPLETED');
 
     return {
@@ -270,6 +270,7 @@ export class DashboardService {
 
     const today = new Date().toISOString().slice(0, 10);
     const todaysAppointments = appointments.filter((appointment) => appointment.appointmentDate.toISOString().slice(0, 10) === today);
+    const upcomingAppointments = appointments.filter((appointment) => appointment.status !== 'COMPLETED');
     const completedAppointments = appointments.filter((appointment) => appointment.status === 'COMPLETED');
 
     return {
@@ -284,12 +285,14 @@ export class DashboardService {
         profile: doctor.doctorProfile,
         stats: {
           totalAppointments: appointments.length,
+          upcomingAppointments: upcomingAppointments.length,
           todayAppointments: todaysAppointments.length,
           completedAppointments: completedAppointments.length,
           prescriptionCount: prescriptions.length,
           vitalCount: vitals.length,
           messageCount: messages.length,
         },
+        upcomingAppointments,
         todaysAppointments,
         completedAppointments,
         prescriptions,

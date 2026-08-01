@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
@@ -12,13 +12,19 @@ import {
   Microscope,
   PhoneCall,
   PlayCircle,
+  Search,
   ShieldCheck,
   Sparkles,
   Star,
   Users,
   Video,
+  X,
+  CalendarDays,
+  CreditCard,
+  Wallet,
+  Banknote,
 } from 'lucide-react';
-import { getAuthToken } from './auth';
+import { getAuthToken, getAuthUser, type AuthUser } from './auth';
 
 interface Doctor {
   id: number;
@@ -48,6 +54,16 @@ interface ApiDoctorUser {
 interface ApiWrapper<T> {
   message?: string;
   data: T;
+}
+
+interface BookingForm {
+  doctorId: number;
+  doctorName: string;
+  appointmentDate: string;
+  startTime: string;
+  endTime: string;
+  symptoms: string;
+  paymentMethod: string;
 }
 
 const services = [
@@ -110,12 +126,44 @@ const partnerLogos = [
   'Doanh nghiệp',
 ];
 
+const PAYMENT_METHODS = [
+  { id: 'MOMO', label: 'MoMo', icon: Wallet, color: 'text-pink-600 bg-pink-50 border-pink-200' },
+  { id: 'VNPAY', label: 'VNPay', icon: CreditCard, color: 'text-blue-600 bg-blue-50 border-blue-200' },
+  { id: 'CASH', label: 'Tiền mặt', icon: Banknote, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
+];
+
+const TIME_SLOTS = [
+  '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
+  '11:00', '11:30', '13:00', '13:30', '14:00', '14:30',
+  '15:00', '15:30', '16:00', '16:30', '17:00',
+];
+
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+
+function formatDoctorName(name?: string) {
+  if (!name) return '---';
+  const trimmed = name.trim();
+  if (/^(BS|ThS|TS|PGS|GS)\b/i.test(trimmed)) {
+    return trimmed;
+  }
+  return `BS. ${trimmed}`;
+}
 
 function Home() {
   const navigate = useNavigate();
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Search & filter
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSpecialty, setSelectedSpecialty] = useState('');
+
+  // Booking modal
+  const [bookingModal, setBookingModal] = useState<BookingForm | null>(null);
+  const [bookingStep, setBookingStep] = useState<1 | 2 | 3>(1); // 1=info, 2=payment, 3=success
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingError, setBookingError] = useState('');
+  const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/doctors`)
@@ -132,17 +180,323 @@ function Home() {
           patientCount: 0,
           isOnline: false,
         }));
-
         setDoctors(normalizedDoctors);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
 
+  // Close modal on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
+        closeBookingModal();
+      }
+    }
+    if (bookingModal) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [bookingModal]);
+
+  // Unique specialties for filter
+  const specialties = Array.from(new Set(doctors.map((d) => d.specialty))).filter(Boolean);
+
+  const filteredDoctors = doctors.filter((d) => {
+    const matchName = d.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchSpec = selectedSpecialty ? d.specialty === selectedSpecialty : true;
+    return matchName && matchSpec;
+  });
+
+  function openBookingModal(doctor: Doctor) {
+    const token = getAuthToken();
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate() + 1).padStart(2, '0');
+    setBookingModal({
+      doctorId: doctor.id,
+      doctorName: doctor.name,
+      appointmentDate: `${yyyy}-${mm}-${dd}`,
+      startTime: '09:00',
+      endTime: '09:30',
+      symptoms: '',
+      paymentMethod: 'MOMO',
+    });
+    setBookingStep(1);
+    setBookingError('');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeBookingModal() {
+    setBookingModal(null);
+    setBookingStep(1);
+    setBookingError('');
+    document.body.style.overflow = '';
+  }
+
+  function updateEndTime(start: string) {
+    const [h, m] = start.split(':').map(Number);
+    const total = h * 60 + m + 30;
+    const eh = Math.floor(total / 60);
+    const em = total % 60;
+    return `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
+  }
+
+  async function submitBooking() {
+    if (!bookingModal) return;
+    const token = getAuthToken();
+    if (!token) { navigate('/login'); return; }
+
+    const authUser = getAuthUser() as AuthUser | null;
+    if (!authUser) { navigate('/login'); return; }
+
+    setBookingLoading(true);
+    setBookingError('');
+
+    try {
+      const res = await fetch(`${API_URL}/appointments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          patientId: authUser.id,
+          doctorId: bookingModal.doctorId,
+          appointmentDate: bookingModal.appointmentDate,
+          startTime: bookingModal.startTime,
+          endTime: bookingModal.endTime,
+          symptoms: bookingModal.symptoms || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? 'Đặt lịch thất bại');
+
+      setBookingStep(3);
+    } catch (err) {
+      setBookingError(err instanceof Error ? err.message : 'Đặt lịch thất bại');
+    } finally {
+      setBookingLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen overflow-hidden text-slate-900">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.14),_transparent_34%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.12),_transparent_28%),linear-gradient(180deg,_#f8fafc_0%,_#eef6ff_45%,_#f8fafc_100%)]" />
 
+      {/* ─── BOOKING MODAL ─── */}
+      {bookingModal && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm">
+          <div
+            ref={modalRef}
+            className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl"
+            style={{ maxHeight: '90vh', overflowY: 'auto' }}
+          >
+            {/* Modal header */}
+            <div className="bg-gradient-to-r from-sky-600 to-cyan-500 px-6 py-5 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-100">Đặt lịch khám</p>
+                  <h2 className="mt-1 text-xl font-black">{formatDoctorName(bookingModal.doctorName)}</h2>
+                </div>
+                <button
+                  onClick={closeBookingModal}
+                  className="grid h-9 w-9 place-items-center rounded-full bg-white/15 transition hover:bg-white/25"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Progress steps */}
+              {bookingStep < 3 && (
+                <div className="mt-4 flex items-center gap-2">
+                  {['Thông tin lịch', 'Thanh toán'].map((label, i) => (
+                    <div key={label} className="flex items-center gap-2">
+                      <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-black transition ${bookingStep > i + 1 ? 'bg-white text-sky-700' : bookingStep === i + 1 ? 'bg-white text-sky-700' : 'bg-white/20 text-white/60'}`}>
+                        {i + 1}
+                      </div>
+                      <span className={`text-xs font-semibold ${bookingStep === i + 1 ? 'text-white' : 'text-white/60'}`}>{label}</span>
+                      {i < 1 && <div className="h-px w-8 bg-white/30" />}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── STEP 1: Thông tin ── */}
+            {bookingStep === 1 && (
+              <div className="space-y-4 p-6">
+                {/* Ngày */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                    <CalendarDays className="mr-1.5 inline h-3.5 w-3.5" />Ngày khám
+                  </label>
+                  <input
+                    id="booking-date"
+                    type="date"
+                    value={bookingModal.appointmentDate}
+                    min={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setBookingModal({ ...bookingModal, appointmentDate: e.target.value })}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                  />
+                </div>
+
+                {/* Giờ */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                    <Clock3 className="mr-1.5 inline h-3.5 w-3.5" />Khung giờ
+                  </label>
+                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                    {TIME_SLOTS.map((slot) => (
+                      <button
+                        key={slot}
+                        type="button"
+                        onClick={() => setBookingModal({ ...bookingModal, startTime: slot, endTime: updateEndTime(slot) })}
+                        className={`rounded-xl border px-2 py-2 text-xs font-bold transition ${bookingModal.startTime === slot ? 'border-sky-500 bg-sky-500 text-white shadow-md shadow-sky-500/30' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-sky-300 hover:bg-sky-50'}`}
+                      >
+                        {slot}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-slate-400">Mỗi ca khám 30 phút. Đến: {bookingModal.startTime} — Kết thúc: {bookingModal.endTime}</p>
+                </div>
+
+                {/* Triệu chứng */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                    Mô tả triệu chứng <span className="normal-case font-normal text-slate-400">(tuỳ chọn)</span>
+                  </label>
+                  <textarea
+                    id="booking-symptoms"
+                    rows={3}
+                    placeholder="Ví dụ: đau đầu, sốt nhẹ, ho khan 3 ngày..."
+                    value={bookingModal.symptoms}
+                    onChange={(e) => setBookingModal({ ...bookingModal, symptoms: e.target.value })}
+                    className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                  />
+                </div>
+
+                {bookingError && (
+                  <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">{bookingError}</p>
+                )}
+
+                <button
+                  id="booking-next-btn"
+                  onClick={() => { setBookingError(''); setBookingStep(2); }}
+                  className="w-full rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 py-3.5 text-sm font-black text-white shadow-lg shadow-sky-600/30 transition hover:from-sky-700 hover:to-cyan-600 active:scale-95"
+                >
+                  Tiếp tục chọn thanh toán →
+                </button>
+              </div>
+            )}
+
+            {/* ── STEP 2: Thanh toán ── */}
+            {bookingStep === 2 && (
+              <div className="space-y-5 p-6">
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Tóm tắt lịch hẹn</p>
+                  <p className="mt-2 font-bold text-slate-900">{formatDoctorName(bookingModal.doctorName)}</p>
+                  <p className="text-sm text-slate-600">{new Date(bookingModal.appointmentDate).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })} · {bookingModal.startTime}–{bookingModal.endTime}</p>
+                  {bookingModal.symptoms && (
+                    <p className="mt-1 text-xs italic text-slate-500">"{bookingModal.symptoms}"</p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Phương thức thanh toán</p>
+                  <div className="space-y-2">
+                    {PAYMENT_METHODS.map((pm) => {
+                      const Icon = pm.icon;
+                      return (
+                        <button
+                          key={pm.id}
+                          id={`payment-${pm.id.toLowerCase()}`}
+                          type="button"
+                          onClick={() => setBookingModal({ ...bookingModal, paymentMethod: pm.id })}
+                          className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-sm font-semibold transition ${bookingModal.paymentMethod === pm.id ? pm.color + ' ring-2 ring-offset-1 ring-current' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                        >
+                          <Icon className="h-5 w-5 shrink-0" />
+                          {pm.label}
+                          {bookingModal.paymentMethod === pm.id && (
+                            <span className="ml-auto text-xs font-black">✓ Đã chọn</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  💡 Phí tư vấn <strong>120.000đ</strong> sẽ được thanh toán qua {PAYMENT_METHODS.find(p => p.id === bookingModal.paymentMethod)?.label}
+                </div>
+
+                {bookingError && (
+                  <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">{bookingError}</p>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setBookingStep(1)}
+                    className="flex-1 rounded-full border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    ← Quay lại
+                  </button>
+                  <button
+                    id="booking-confirm-btn"
+                    onClick={submitBooking}
+                    disabled={bookingLoading}
+                    className="flex-[2] rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 py-3 text-sm font-black text-white shadow-lg shadow-sky-600/30 transition hover:from-sky-700 hover:to-cyan-600 active:scale-95 disabled:opacity-60"
+                  >
+                    {bookingLoading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                        Đang đặt lịch...
+                      </span>
+                    ) : '✅ Xác nhận đặt lịch'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 3: Thành công ── */}
+            {bookingStep === 3 && (
+              <div className="flex flex-col items-center px-6 py-10 text-center">
+                <div className="grid h-20 w-20 place-items-center rounded-full bg-emerald-100 text-5xl">
+                  🎉
+                </div>
+                <h3 className="mt-4 text-2xl font-black text-slate-900">Đặt lịch thành công!</h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  Lịch hẹn với <strong>{formatDoctorName(bookingModal.doctorName)}</strong> ngày{' '}
+                  <strong>{new Date(bookingModal.appointmentDate).toLocaleDateString('vi-VN')}</strong>{' '}
+                  lúc <strong>{bookingModal.startTime}</strong> đã được ghi nhận.
+                </p>
+                <p className="mt-2 text-sm text-slate-500">Bác sĩ sẽ xác nhận lịch hẹn trong thời gian sớm nhất.</p>
+
+                <div className="mt-6 flex gap-3">
+                  <button
+                    onClick={closeBookingModal}
+                    className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Đóng
+                  </button>
+                  <button
+                    onClick={() => { closeBookingModal(); navigate('/dashboard'); }}
+                    className="rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-sky-500/30 transition hover:from-sky-700"
+                  >
+                    Xem lịch của tôi →
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── HEADER ─── */}
       <header className="sticky top-0 z-50 border-b border-white/60 bg-white/78 backdrop-blur-xl shadow-[0_8px_32px_rgba(15,23,42,0.04)]">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
           <button onClick={() => navigate('/')} className="flex items-center gap-3 text-left">
@@ -190,18 +544,19 @@ function Home() {
               <PhoneCall className="h-4 w-4" />
               0886 805 115
             </a>
-            <button
-              onClick={() => navigate('/clinic')}
+            <a
+              href="#doctors"
               className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
             >
-              Vào phòng khám
+              Đặt lịch ngay
               <ArrowRight className="h-4 w-4" />
-            </button>
+            </a>
           </div>
         </div>
       </header>
 
       <main>
+        {/* Hero */}
         <section className="relative mx-auto max-w-7xl px-4 pb-14 pt-10 sm:px-6 lg:px-8 lg:pb-20 lg:pt-16">
           <div className="grid items-center gap-10 lg:grid-cols-[1.15fr_0.85fr]">
             <div className="space-y-8">
@@ -219,19 +574,18 @@ function Home() {
                 </h1>
                 <p className="max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
                   OS Telehealth kết nối người bệnh với bác sĩ, xét nghiệm tại nhà, giao thuốc và theo dõi
-                  sức khỏe trong một trải nghiệm thống nhất. Giao diện mới được thiết kế theo hướng hiện đại,
-                  sáng sủa và nhiều chiều sâu thị giác.
+                  sức khỏe trong một trải nghiệm thống nhất.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <button
-                  onClick={() => navigate('/clinic')}
+                <a
+                  href="#doctors"
                   className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-slate-900/15 transition hover:-translate-y-0.5 hover:bg-slate-700"
                 >
                   Đặt lịch khám ngay
                   <ChevronRight className="h-4 w-4" />
-                </button>
+                </a>
                 <a
                   href="#services"
                   className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-200 hover:text-sky-700"
@@ -355,6 +709,7 @@ function Home() {
           </div>
         </section>
 
+        {/* Trust badges */}
         <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8">
           <div className="grid gap-4 md:grid-cols-4">
             {[
@@ -382,6 +737,7 @@ function Home() {
           </div>
         </section>
 
+        {/* Services */}
         <section id="services" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="max-w-2xl space-y-3">
             <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-700">Dịch vụ</p>
@@ -425,6 +781,7 @@ function Home() {
           </div>
         </section>
 
+        {/* Process */}
         <section id="process" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
             <div className="rounded-[2rem] border border-slate-100 bg-slate-950 p-8 text-white shadow-[0_28px_90px_rgba(15,23,42,0.2)]">
@@ -476,62 +833,92 @@ function Home() {
               <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
                 <p className="text-sm font-bold uppercase tracking-[0.24em] text-sky-700">Liên hệ</p>
                 <div className="mt-4 space-y-3 text-sm text-slate-600">
-                  <div className="flex items-center gap-3">
-                    <PhoneCall className="h-4 w-4 text-sky-700" />
-                    0886 805 115
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Mail className="h-4 w-4 text-sky-700" />
-                    info@ostelehealth.com
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <MapPin className="h-4 w-4 text-sky-700" />
-                    TP. Hồ Chí Minh
-                  </div>
+                  <div className="flex items-center gap-3"><PhoneCall className="h-4 w-4 text-sky-700" />0886 805 115</div>
+                  <div className="flex items-center gap-3"><Mail className="h-4 w-4 text-sky-700" />info@ostelehealth.com</div>
+                  <div className="flex items-center gap-3"><MapPin className="h-4 w-4 text-sky-700" />TP. Hồ Chí Minh</div>
                 </div>
               </div>
 
               <div className="rounded-[2rem] border border-slate-100 bg-gradient-to-br from-sky-500 to-emerald-500 p-6 text-white shadow-[0_20px_60px_rgba(14,165,233,0.2)]">
                 <p className="text-sm font-bold uppercase tracking-[0.24em] text-white/80">Thanh toán</p>
-                <p className="mt-4 text-2xl font-black">Chi phí hiển thị bằng VND</p>
+                <p className="mt-4 text-2xl font-black">MoMo · VNPay · Tiền mặt</p>
                 <p className="mt-3 text-sm leading-6 text-white/85">
-                  Giao diện thể hiện rõ ràng các mốc phí, giảm cảm giác rối và giúp người dùng chọn dịch vụ nhanh hơn.
+                  Chọn phương thức thanh toán phù hợp ngay trong bước đặt lịch.
                 </p>
               </div>
             </div>
           </div>
         </section>
 
+        {/* ─── DOCTORS SECTION ─── */}
         <section id="doctors" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl space-y-3">
               <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-700">Bác sĩ nổi bật</p>
               <h2 className="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-                Đội ngũ chuyên gia nổi bật, đặt trong layout card cao cấp
+                Đội ngũ chuyên gia — tìm kiếm & đặt lịch ngay
               </h2>
               <p className="text-slate-600">
-                Dữ liệu bác sĩ lấy từ backend, nhưng cách trình bày đã được làm lại theo phong cách premium,
-                có trạng thái online, số ca bệnh và nút vào khám trực tiếp.
+                Tìm bác sĩ theo tên hoặc chuyên khoa, bấm "Đặt lịch" để chọn ngày giờ và thanh toán.
               </p>
-            </div>
-            <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm">
-              Kết nối với bác sĩ trong vài cú nhấp
             </div>
           </div>
 
-          <div className="mt-10">
+          {/* Search + Filter */}
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                id="doctor-search"
+                type="text"
+                placeholder="Tìm theo tên bác sĩ..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-full border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setSelectedSpecialty('')}
+                className={`rounded-full border px-4 py-2 text-xs font-bold transition ${selectedSpecialty === '' ? 'border-sky-500 bg-sky-500 text-white shadow-md shadow-sky-500/30' : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-700'}`}
+              >
+                Tất cả
+              </button>
+              {specialties.map((spec) => (
+                <button
+                  key={spec}
+                  onClick={() => setSelectedSpecialty(spec === selectedSpecialty ? '' : spec)}
+                  className={`rounded-full border px-4 py-2 text-xs font-bold transition ${selectedSpecialty === spec ? 'border-sky-500 bg-sky-500 text-white shadow-md shadow-sky-500/30' : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-700'}`}
+                >
+                  {spec}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Doctor count result */}
+          {!loading && (
+            <p className="mt-3 text-sm text-slate-500">
+              {filteredDoctors.length === 0
+                ? 'Không tìm thấy bác sĩ phù hợp.'
+                : `Tìm thấy ${filteredDoctors.length} bác sĩ${selectedSpecialty ? ` · ${selectedSpecialty}` : ''}${searchQuery ? ` · "${searchQuery}"` : ''}`}
+            </p>
+          )}
+
+          <div className="mt-6">
             {loading ? (
               <div className="flex items-center justify-center gap-3 rounded-[2rem] border border-slate-100 bg-white py-16 text-sm font-semibold text-sky-700 shadow-[0_20px_60px_rgba(15,23,42,0.05)]">
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600" />
                 Đang tải danh sách bác sĩ...
               </div>
-            ) : doctors.length === 0 ? (
+            ) : filteredDoctors.length === 0 ? (
               <div className="rounded-[2rem] border border-slate-100 bg-white py-16 text-center text-sm text-slate-500 shadow-[0_20px_60px_rgba(15,23,42,0.05)]">
-                Chưa có dữ liệu bác sĩ. Kiểm tra lại backend.
+                {doctors.length === 0 ? 'Chưa có dữ liệu bác sĩ. Kiểm tra lại backend.' : 'Không tìm thấy bác sĩ phù hợp với tìm kiếm.'}
               </div>
             ) : (
               <div className="grid gap-6 lg:grid-cols-2">
-                {doctors.map((doctor) => (
+                {filteredDoctors.map((doctor) => (
                   <article
                     key={doctor.id}
                     className="group rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)] transition hover:-translate-y-1 hover:shadow-[0_28px_80px_rgba(15,23,42,0.12)]"
@@ -551,13 +938,17 @@ function Home() {
                           <p className="mt-1 text-sm font-medium text-slate-500">{doctor.specialty}</p>
                         </div>
 
-                        <button
-                          onClick={() => navigate(`/clinic?doc=${doctor.id}`)}
-                          className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
-                        >
-                          Vào khám live
-                          <Video className="h-4 w-4" />
-                        </button>
+                        {/* Action button */}
+                        <div className="w-full">
+                          <button
+                            id={`book-doctor-${doctor.id}`}
+                            onClick={() => openBookingModal(doctor)}
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-4 py-2.5 text-sm font-black text-white shadow-md shadow-sky-500/30 transition hover:from-sky-700 hover:to-cyan-600 active:scale-95"
+                          >
+                            <CalendarDays className="h-4 w-4" />
+                            Đặt lịch
+                          </button>
+                        </div>
                       </div>
 
                       <div className="flex-1 space-y-4">
@@ -606,13 +997,14 @@ function Home() {
           </div>
         </section>
 
+        {/* Social */}
         <section id="social" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
             <div className="rounded-[2rem] border border-slate-100 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
               <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-700">Tác động xã hội</p>
               <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">Dự án cộng đồng và y tế học đường</h2>
               <p className="mt-4 text-sm leading-7 text-slate-600">
-                Phần này được nâng cấp để giống một trang thương hiệu có chiều sâu hơn, thay vì chỉ là danh sách tin.
+                Phần này được nâng cấp để giống một trang thương hiệu có chiều sâu hơn.
               </p>
 
               <div className="mt-6 space-y-4">
@@ -627,26 +1019,10 @@ function Home() {
 
             <div className="grid gap-6 md:grid-cols-2">
               {[
-                {
-                  title: 'Giám sát an toàn',
-                  description: 'Tối ưu cho trường học, doanh nghiệp và các chương trình sàng lọc quy mô lớn.',
-                  accent: 'from-sky-500 to-cyan-500',
-                },
-                {
-                  title: 'Hội thảo chuyên môn',
-                  description: 'Thiết kế như một thư viện hoạt động với hình ảnh, nhãn và điểm nhấn rõ ràng.',
-                  accent: 'from-emerald-500 to-teal-500',
-                },
-                {
-                  title: 'Tư vấn ca phức tạp',
-                  description: 'Hỗ trợ phân luồng sớm, giảm thời gian chờ và tăng khả năng tiếp cận chuyên gia.',
-                  accent: 'from-indigo-500 to-sky-500',
-                },
-                {
-                  title: 'Đào tạo và chuyển giao',
-                  description: 'Mô hình dễ đọc, dễ hiểu, dễ triển khai cho đội ngũ y tế cơ sở.',
-                  accent: 'from-amber-500 to-orange-500',
-                },
+                { title: 'Giám sát an toàn', description: 'Tối ưu cho trường học, doanh nghiệp và các chương trình sàng lọc quy mô lớn.', accent: 'from-sky-500 to-cyan-500' },
+                { title: 'Hội thảo chuyên môn', description: 'Thiết kế như một thư viện hoạt động với hình ảnh, nhãn và điểm nhấn rõ ràng.', accent: 'from-emerald-500 to-teal-500' },
+                { title: 'Tư vấn ca phức tạp', description: 'Hỗ trợ phân luồng sớm, giảm thời gian chờ và tăng khả năng tiếp cận chuyên gia.', accent: 'from-indigo-500 to-sky-500' },
+                { title: 'Đào tạo và chuyển giao', description: 'Mô hình dễ đọc, dễ hiểu, dễ triển khai cho đội ngũ y tế cơ sở.', accent: 'from-amber-500 to-orange-500' },
               ].map((item) => (
                 <div key={item.title} className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
                   <div className={`h-2 w-20 rounded-full bg-gradient-to-r ${item.accent}`} />
@@ -658,6 +1034,7 @@ function Home() {
           </div>
         </section>
 
+        {/* Partners */}
         <section id="partners" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="rounded-[2.25rem] border border-slate-100 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -692,28 +1069,28 @@ function Home() {
           </div>
         </section>
 
+        {/* CTA */}
         <section className="mx-auto max-w-7xl px-4 pb-20 sm:px-6 lg:px-8">
           <div className="rounded-[2.25rem] bg-gradient-to-r from-slate-950 via-slate-900 to-sky-950 px-8 py-10 text-white shadow-[0_30px_90px_rgba(15,23,42,0.25)] lg:px-12">
             <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
               <div>
-                <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-300">Tải ứng dụng</p>
+                <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-300">Bắt đầu ngay</p>
                 <h2 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">
                   Sẵn sàng cho trải nghiệm khám chữa bệnh đẹp hơn và trơn hơn
                 </h2>
                 <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300">
-                  Phần kết thúc được thiết kế như một call-to-action lớn, giống kiểu landing page thương hiệu y tế
-                  hiện đại: rõ ràng, có chiều sâu và kêu gọi hành động mạnh hơn.
+                  Đặt lịch với bác sĩ chuyên khoa, chọn giờ khám và thanh toán online ngay hôm nay.
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-3 lg:justify-end">
-                <button
-                  onClick={() => navigate('/clinic')}
+                <a
+                  href="#doctors"
                   className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-50"
                 >
-                  Vào phòng khám
+                  Tìm bác sĩ & đặt lịch
                   <ChevronRight className="h-4 w-4" />
-                </button>
+                </a>
                 <a
                   href="mailto:Info@ostelehealth.com"
                   className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
@@ -742,22 +1119,15 @@ function Home() {
               </div>
             </div>
             <p className="max-w-md text-sm leading-7 text-slate-600">
-              Giao diện demo được làm lại theo hướng cao cấp hơn, tập trung vào nhịp điệu thị giác, sự tin cậy
-              và khả năng mở rộng cho các màn hình y tế khác nhau.
+              Kết nối người bệnh với bác sĩ chuyên khoa, hỗ trợ tư vấn trực tuyến và theo dõi sức khỏe toàn diện.
             </p>
           </div>
 
           <div className="space-y-3 text-sm text-slate-600">
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Liên hệ</p>
-            <div className="flex items-center gap-3">
-              <PhoneCall className="h-4 w-4 text-sky-700" /> 0886 805 115
-            </div>
-            <div className="flex items-center gap-3">
-              <Mail className="h-4 w-4 text-sky-700" /> Info@ostelehealth.com
-            </div>
-            <div className="flex items-center gap-3">
-              <MapPin className="h-4 w-4 text-sky-700" /> TP. Hồ Chí Minh
-            </div>
+            <div className="flex items-center gap-3"><PhoneCall className="h-4 w-4 text-sky-700" /> 0886 805 115</div>
+            <div className="flex items-center gap-3"><Mail className="h-4 w-4 text-sky-700" /> Info@ostelehealth.com</div>
+            <div className="flex items-center gap-3"><MapPin className="h-4 w-4 text-sky-700" /> TP. Hồ Chí Minh</div>
           </div>
 
           <div className="space-y-3 text-sm text-slate-600">

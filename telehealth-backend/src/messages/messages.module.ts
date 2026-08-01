@@ -10,5 +10,6 @@ import { RolesGuard } from '../auth/roles.guard';
   controllers: [MessagesController],
   // Khai báo thêm MessagesGateway và PrismaService để NestJS tự động tiêm dependencies
   providers: [MessagesService, MessagesGateway, PrismaService, JwtAuthGuard, RolesGuard],
+  exports: [MessagesGateway],
 })
 export class MessagesModule {}

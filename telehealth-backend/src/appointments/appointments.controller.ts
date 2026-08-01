@@ -28,7 +28,7 @@ export class AppointmentsController {
 
   // 3. Cổng duyệt/hủy lịch hẹn: PATCH http://localhost:3000/appointments/:id/status
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'DOCTOR')
+  @Roles('ADMIN', 'DOCTOR', 'PATIENT')
   @Patch(':id/status')
   updateStatus(@Param('id') id: string, @Body('status') status: string, @CurrentUser() user: { sub: number; role: string }) {
     return this.appointmentsService.updateStatus(+id, status, user);

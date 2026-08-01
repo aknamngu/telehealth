@@ -2,11 +2,15 @@ import { Injectable, BadRequestException, ForbiddenException, NotFoundException 
 import { PrismaService } from '../prisma.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
+import { MessagesGateway } from '../messages/messages.gateway';
 
 @Injectable()
 export class AppointmentsService {
-  // Tiêm PrismaService vào để thao tác với database Docker
-  constructor(private readonly prisma: PrismaService) {}
+  // Tiêm PrismaService và MessagesGateway vào để thao tác DB và emit socket
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gateway: MessagesGateway,
+  ) {}
 
   async create(createAppointmentDto: CreateAppointmentDto, user: { sub: number; role: string }) {
     const { patientId, doctorId, appointmentDate, startTime, endTime } = createAppointmentDto;
@@ -70,7 +74,18 @@ export class AppointmentsService {
         endTime,
         status: 'PENDING', // Mặc định khi vừa đặt là Chờ duyệt
       },
+      include: { patient: { select: { fullName: true } } },
     });
+
+    // 4. Emit real-time socket notification tới phòng bác sĩ
+    try {
+      this.gateway.server.to(`doctor_${resolvedDoctorId}`).emit('appointment:new', {
+        appointmentId: appointment.id,
+        patientName: appointment.patient?.fullName ?? 'Bệnh nhân',
+        date: appointmentDate,
+        startTime,
+      });
+    } catch { /* Gateway chưa ready thì bỏ qua */ }
 
     return {
       message: "Đặt lịch hẹn khám bệnh từ xa thành công rực rỡ! Chờ bác sĩ xác nhận nha.",
@@ -122,11 +137,24 @@ export class AppointmentsService {
       throw new BadRequestException('Trạng thái cập nhật không hợp lệ!');
     }
 
+    // 3. Phân quyền: Bệnh nhân chỉ được tự hủy lịch của mình (CANCELLED only)
+    if (user.role === 'PATIENT') {
+      if (appointment.patientId !== user.sub) {
+        throw new ForbiddenException('Bạn chỉ có thể hủy lịch của chính mình!');
+      }
+      if (status !== 'CANCELLED') {
+        throw new ForbiddenException('Bệnh nhân chỉ được phép hủy lịch hẹn!');
+      }
+      if (!['PENDING', 'CONFIRMED'].includes(appointment.status)) {
+        throw new BadRequestException('Lịch hẹn này không thể hủy (đã hoàn thành hoặc đã hủy trước đó)!');
+      }
+    }
+
     if (user.role === 'DOCTOR' && appointment.doctorId !== user.sub) {
       throw new ForbiddenException('Bác sĩ chỉ có thể cập nhật lịch của chính mình!');
     }
 
-    // 3. Tiến hành cập nhật xuống MySQL Docker
+    // 4. Tiến hành cập nhật xuống MySQL Docker
     const updatedAppointment = await this.prisma.appointment.update({
       where: { id },
       data: { status },
