@@ -441,7 +441,7 @@ function Dashboard() {
                 <p className="font-bold text-slate-900">{appointment.doctor?.fullName ?? '---'}</p>
                 <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate)} · {appointment.startTime} - {appointment.endTime}</p>
                 <button 
-                  onClick={() => navigate(`/consultation/${appointment.id}`)}
+                  onClick={() => navigate(`/clinic?doc=${appointment.doctorId ?? 1}&appointmentId=${appointment.id}`)}
                   className="mt-3 block w-full rounded-full bg-sky-600 px-4 py-2 text-center text-sm font-bold text-white transition hover:bg-sky-700"
                 >
                   Vào phòng khám
@@ -529,10 +529,10 @@ function Dashboard() {
                 <p className="font-bold text-slate-900">{appointment.patient?.fullName ?? '---'}</p>
                 <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate)} · {appointment.startTime} - {appointment.endTime}</p>
                 <button 
-                  onClick={() => navigate(`/clinic?doc/${appointment.id}`)}
+                  onClick={() => navigate(`/clinic?doc=${authUser?.id ?? 1}&appointmentId=${appointment.id}`)}
                   className="mt-3 block w-full rounded-full bg-emerald-600 px-4 py-2 text-center text-sm font-bold text-white transition hover:bg-emerald-700"
                 >
-                  Vào phòng khám
+                  Vào phòng tư vấn
                 </button>
               </div>
             ))}

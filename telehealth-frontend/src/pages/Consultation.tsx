@@ -1,19 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { socket } from '../socket';
 import { getAuthUser } from '../auth';
 
 type CallStatus = 'idle' | 'calling' | 'incoming' | 'connected' | 'declined';
 
-interface IncomingCallPayload {
-  appointmentId: string;
-  fromName: string;
-  fromRole: string;
-}
-
 export default function Consultation() {
   const { appointmentId } = useParams();
+  const location = useLocation();
   const authUser = getAuthUser();
+  const autoAccept = location.state?.autoAccept as boolean | undefined;
+  const doctorId = location.state?.doctorId as number | undefined;
 
   const peerConnection = useRef<RTCPeerConnection | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -21,65 +18,83 @@ export default function Consultation() {
   const localStreamRef = useRef<MediaStream | null>(null);
 
   const [callStatus, setCallStatus] = useState<CallStatus>('idle');
-  const [incomingCall, setIncomingCall] = useState<IncomingCallPayload | null>(null);
+  const [incomingCall, setIncomingCall] = useState<{ appointmentId: string; fromName: string; fromRole: string } | null>(null);
 
   useEffect(() => {
     if (!appointmentId) return;
 
-    socket.connect();
     socket.emit('joinRoom', appointmentId);
+    if (authUser?.role === 'DOCTOR') {
+      socket.emit('joinRoom', `doctor_${authUser.id}`);
+    }
 
     const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-    peerConnection.current = new RTCPeerConnection(config);
+    const pc = new RTCPeerConnection(config);
+    peerConnection.current = pc;
 
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((mediaStream) => {
-      localStreamRef.current = mediaStream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = mediaStream;
-      mediaStream.getTracks().forEach((track) => peerConnection.current?.addTrack(track, mediaStream));
-    });
+    const setupLocalMedia = async () => {
+      try {
+        const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localStreamRef.current = mediaStream;
+        if (localVideoRef.current) localVideoRef.current.srcObject = mediaStream;
+        mediaStream.getTracks().forEach((track) => pc.addTrack(track, mediaStream));
 
-    peerConnection.current.onicecandidate = (event) => {
+        if (authUser?.role === 'DOCTOR' && autoAccept) {
+          setCallStatus('calling');
+          socket.emit('call:accept', { appointmentId });
+        }
+      } catch (error) {
+        console.error('Failed to initialize local media:', error);
+      }
+    };
+
+    setupLocalMedia();
+
+    pc.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit('candidate', { candidate: event.candidate, appointmentId });
       }
     };
 
-    peerConnection.current.ontrack = (event) => {
+    pc.ontrack = (event) => {
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
     };
 
-    // --- Báo hiệu cuộc gọi ---
-    socket.on('call:invite', (payload: IncomingCallPayload) => {
+    socket.on('call:invite', (payload: { appointmentId: string; fromName: string; fromRole: string }) => {
       setIncomingCall(payload);
       setCallStatus('incoming');
     });
 
     socket.on('call:accept', async () => {
-      // Người GỌI nhận được xác nhận -> giờ mới thật sự tạo offer WebRTC
-      const offer = await peerConnection.current?.createOffer();
-      await peerConnection.current?.setLocalDescription(offer);
-      socket.emit('offer', { offer, appointmentId });
-      setCallStatus('connected');
+      if (authUser?.role === 'PATIENT') {
+        setCallStatus('calling');
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('offer', { offer, appointmentId });
+      }
     });
 
     socket.on('call:decline', () => {
       setCallStatus('declined');
     });
 
-    // --- WebRTC signaling (giữ nguyên như cũ) ---
     socket.on('offer', async (offer) => {
-      await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await peerConnection.current?.createAnswer();
-      await peerConnection.current?.setLocalDescription(answer);
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
       socket.emit('answer', { answer, appointmentId });
+      setCallStatus('connected');
     });
 
     socket.on('answer', async (answer) => {
-      await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(answer));
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      setCallStatus('connected');
     });
 
-    socket.on('candidate', (candidate) => {
-      peerConnection.current?.addIceCandidate(new RTCIceCandidate(candidate));
+    socket.on('candidate', async (candidate) => {
+      if (candidate) {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      }
     });
 
     return () => {
@@ -90,27 +105,34 @@ export default function Consultation() {
       socket.off('answer');
       socket.off('candidate');
       localStreamRef.current?.getTracks().forEach((track) => track.stop());
-      peerConnection.current?.close();
-      socket.disconnect();
+      pc.close();
+      peerConnection.current = null;
     };
-  }, [appointmentId]);
+  }, [appointmentId, authUser?.id, authUser?.role, autoAccept]);
 
   const handleStartCall = () => {
+    if (!appointmentId) return;
+
     setCallStatus('calling');
     socket.emit('call:invite', {
       appointmentId,
+      doctorId,
       fromName: authUser?.fullName ?? 'Người dùng',
       fromRole: authUser?.role ?? 'PATIENT',
     });
   };
 
   const handleAccept = () => {
+    if (!appointmentId || !incomingCall) return;
+
     socket.emit('call:accept', { appointmentId });
-    setCallStatus('connected');
     setIncomingCall(null);
+    setCallStatus('connected');
   };
 
   const handleDecline = () => {
+    if (!appointmentId) return;
+
     socket.emit('call:decline', { appointmentId });
     setCallStatus('idle');
     setIncomingCall(null);

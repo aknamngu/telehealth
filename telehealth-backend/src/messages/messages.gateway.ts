@@ -63,10 +63,12 @@ handleCandidate(@MessageBody() payload: { candidate: any; appointmentId: string 
 
 @SubscribeMessage('joinRoom')
 handleJoinRoom(
-  @MessageBody() appointmentId: string, // Nhận ID từ URL
+  @MessageBody() appointmentId: string, // Nhận ID từ URL hoặc raw doctor_* room
   @ConnectedSocket() client: Socket
 ) {
-  client.join(`room_${appointmentId}`); // Gộp client vào phòng
+  const roomName = appointmentId.startsWith('doctor_') ? appointmentId : `room_${appointmentId}`;
+  client.join(roomName);
+  console.log(`📥 Client ${client.id} joined socket room: ${roomName}`);
 }
 
 // Cập nhật lại các event offer/answer/candidate như sau:
@@ -76,10 +78,17 @@ handleOffer(@MessageBody() payload: { offer: any, appointmentId: string }, @Conn
 }
 @SubscribeMessage('call:invite')
 handleCallInvite(
-  @MessageBody() payload: { appointmentId: string; fromName: string; fromRole: string },
+  @MessageBody() payload: { appointmentId: string; doctorId?: number; fromName: string; fromRole: string },
   @ConnectedSocket() client: Socket,
 ) {
+  console.log(`📩 call:invite from ${client.id}`, payload);
   client.to(`room_${payload.appointmentId}`).emit('call:invite', payload);
+
+  if (payload.doctorId) {
+    const doctorRoom = `doctor_${payload.doctorId}`;
+    console.log(`📨 forwarding invite to ${doctorRoom}`);
+    client.to(doctorRoom).emit('call:invite', payload);
+  }
 }
 
 @SubscribeMessage('call:accept')
@@ -87,7 +96,9 @@ handleCallAccept(
   @MessageBody() payload: { appointmentId: string },
   @ConnectedSocket() client: Socket,
 ) {
-  client.to(`room_${payload.appointmentId}`).emit('call:accept', payload);
+  console.log(`✅ call:accept for appointment ${payload.appointmentId}`);
+  // Broadcast to everyone in the room (patient will receive this to create offer)
+  client.to(`room_${payload.appointmentId}`).emit('call:accept');
 }
 
 @SubscribeMessage('call:decline')
@@ -95,7 +106,16 @@ handleCallDecline(
   @MessageBody() payload: { appointmentId: string },
   @ConnectedSocket() client: Socket,
 ) {
-  client.to(`room_${payload.appointmentId}`).emit('call:decline', payload);
+  client.to(`room_${payload.appointmentId}`).emit('call:decline');
+}
+
+@SubscribeMessage('call:end')
+handleCallEnd(
+  @MessageBody() payload: { appointmentId: string },
+  @ConnectedSocket() client: Socket,
+) {
+  console.log(`📴 call:end for appointment ${payload.appointmentId}`);
+  client.to(`room_${payload.appointmentId}`).emit('call:end');
 }
 }
 
