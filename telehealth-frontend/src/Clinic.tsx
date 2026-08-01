@@ -12,6 +12,8 @@ import {
   Video,
   Zap,
 } from 'lucide-react';
+import { getAuthToken } from './auth';
+import { connectSocket, socket } from './socket';
 
 interface Doctor {
   id: number;
@@ -50,11 +52,13 @@ function Clinic() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const docId = searchParams.get('doc');
+  const doctorId = Number(docId ?? 1);
 
   const [doctor, setDoctor] = useState<Doctor | null>(null);
   const [heartRate, setHeartRate] = useState(84);
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
+  const [realtimeStatus, setRealtimeStatus] = useState('Đang kết nối...');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -99,6 +103,47 @@ function Clinic() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!token) {
+      setRealtimeStatus('Bạn cần đăng nhập để gửi realtime cho bác sĩ.');
+      return;
+    }
+
+    connectSocket(token);
+
+    const handleConnect = () => setRealtimeStatus('Đã kết nối realtime với bác sĩ.');
+    const handleDisconnect = () => setRealtimeStatus('Mất kết nối realtime, đang thử lại...');
+    const handleSocketError = (error: { message?: string }) =>
+      setRealtimeStatus(error?.message ?? 'Lỗi kết nối realtime.');
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('socketError', handleSocketError);
+
+    if (socket.connected) {
+      setRealtimeStatus('Đã kết nối realtime với bác sĩ.');
+    }
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('socketError', handleSocketError);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!socket.connected || Number.isNaN(doctorId)) {
+      return;
+    }
+
+    socket.emit('sendPatientSignal', {
+      doctorId,
+      heartRate,
+      oxygenSaturation: 100,
+    });
+  }, [doctorId, heartRate]);
+
   const handleSend = (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -114,6 +159,16 @@ function Clinic() {
         time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
+
+    if (socket.connected && !Number.isNaN(doctorId)) {
+      socket.emit('sendPatientSignal', {
+        doctorId,
+        heartRate,
+        oxygenSaturation: 100,
+        note: chatInput.trim(),
+      });
+    }
+
     setChatInput('');
   };
 
@@ -174,7 +229,7 @@ function Clinic() {
 
               <div className="flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700">
                 <ShieldCheck className="h-4 w-4" />
-                Kết nối bảo mật
+                {realtimeStatus}
               </div>
             </div>
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  Activity,
   ArrowLeft,
   CalendarDays,
   ChartColumn,
@@ -14,6 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import { clearAuthSession, getAuthToken, type AuthUser } from './auth';
+import { connectSocket, socket } from './socket';
 
 interface ApiWrapper<T> {
   message?: string;
@@ -111,6 +113,16 @@ interface DoctorPayload {
   messages: MessageItem[];
 }
 
+interface LivePatientSignal {
+  patientId: number;
+  patientEmail: string;
+  heartRate: number | null;
+  respiratoryRate: number | null;
+  oxygenSaturation: number | null;
+  note: string | null;
+  sentAt: string;
+}
+
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
 function formatDate(value?: string | Date) {
@@ -129,6 +141,7 @@ function Dashboard() {
   const [payload, setPayload] = useState<AdminPayload | PatientPayload | DoctorPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [liveSignals, setLiveSignals] = useState<LivePatientSignal[]>([]);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -191,6 +204,30 @@ function Dashboard() {
       })
       .finally(() => setLoading(false));
   }, [authUser, navigate]);
+
+  useEffect(() => {
+    if (!authUser || authUser.role !== 'DOCTOR') {
+      setLiveSignals([]);
+      return;
+    }
+
+    const token = getAuthToken();
+    if (!token) {
+      return;
+    }
+
+    connectSocket(token);
+
+    const handleSignal = (signal: LivePatientSignal) => {
+      setLiveSignals((previous) => [signal, ...previous].slice(0, 8));
+    };
+
+    socket.on('patientSignalReceived', handleSignal);
+
+    return () => {
+      socket.off('patientSignalReceived', handleSignal);
+    };
+  }, [authUser]);
 
   const roleLabel = useMemo(() => {
     if (authUser?.role === 'ADMIN') return 'Admin Overview';
@@ -499,6 +536,35 @@ function Dashboard() {
   function renderDoctorSections(data: DoctorPayload) {
     return (
       <>
+        <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">
+            <Activity className="h-4 w-4" />
+            Live patient signals
+          </div>
+          <div className="mt-4 space-y-3">
+            {liveSignals.length === 0 ? (
+              <p className="rounded-3xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-600">
+                Chưa có tín hiệu realtime nào từ bệnh nhân trong phiên này.
+              </p>
+            ) : (
+              liveSignals.map((signal, index) => (
+                <div key={`${signal.patientId}-${signal.sentAt}-${index}`} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <p className="font-bold text-slate-900">Bệnh nhân #{signal.patientId}</p>
+                    <p className="text-slate-500">{formatTime(signal.sentAt)}</p>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">{signal.patientEmail}</p>
+                  <div className="mt-3 flex flex-wrap gap-3 text-sm font-semibold text-slate-700">
+                    <span>Nhịp tim: {signal.heartRate ?? '---'} bpm</span>
+                    <span>SpO2: {signal.oxygenSaturation ?? '---'}%</span>
+                  </div>
+                  {signal.note ? <p className="mt-2 text-sm text-slate-700">Ghi chú: {signal.note}</p> : null}
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <Stethoscope className="h-4 w-4" />

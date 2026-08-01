@@ -20,6 +20,8 @@ const daysFromNow = (days: number) => new Date(now.getTime() + days * 24 * 60 * 
 
 async function resetSeedTables() {
   await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0;');
+  await prisma.$executeRawUnsafe('DELETE FROM PaymentTransaction;');
+  await prisma.$executeRawUnsafe('DELETE FROM BillingInvoice;');
   await prisma.$executeRawUnsafe('DELETE FROM AiConsultationSummary;');
   await prisma.$executeRawUnsafe('DELETE FROM VitalSignsAI;');
   await prisma.$executeRawUnsafe('DELETE FROM MessageLog;');
@@ -445,7 +447,78 @@ async function main() {
     ],
   });
 
-  console.log('🌱 Seed full-stack telehealth data đã nạp xong: users, doctors, appointments, prescriptions, messages, vital signs, call logs, AI summaries.');
+  const invoices = [] as Array<{ id: number; appointmentId: number }>;
+  for (const invoiceData of [
+    {
+      appointmentId: appointments[0].id,
+      subtotal: 350000,
+      serviceFee: 25000,
+      discount: 0,
+      totalAmount: 375000,
+      paidAmount: 375000,
+      status: 'PAID',
+      dueDate: daysAgo(9),
+      note: 'Đã thanh toán đủ sau khi kết thúc phiên khám.',
+    },
+    {
+      appointmentId: appointments[1].id,
+      subtotal: 280000,
+      serviceFee: 20000,
+      discount: 10000,
+      totalAmount: 290000,
+      paidAmount: 150000,
+      status: 'PARTIAL',
+      dueDate: daysAgo(6),
+      note: 'Bệnh nhân đã thanh toán trước một phần.',
+    },
+    {
+      appointmentId: appointments[2].id,
+      subtotal: 300000,
+      serviceFee: 20000,
+      discount: 0,
+      totalAmount: 320000,
+      paidAmount: 0,
+      status: 'OVERDUE',
+      dueDate: daysAgo(2),
+      note: 'Cần nhắc công nợ đợt 1.',
+    },
+    {
+      appointmentId: appointments[4].id,
+      subtotal: 260000,
+      serviceFee: 15000,
+      discount: 0,
+      totalAmount: 275000,
+      paidAmount: 0,
+      status: 'UNPAID',
+      dueDate: daysFromNow(2),
+      note: 'Chờ bệnh nhân chuyển khoản.',
+    },
+  ]) {
+    invoices.push(await prisma.billingInvoice.create({ data: invoiceData }));
+  }
+
+  await prisma.paymentTransaction.createMany({
+    data: [
+      {
+        invoiceId: invoices[0].id,
+        amount: 375000,
+        paymentMethod: 'BANK_TRANSFER',
+        paidAt: daysAgo(9),
+        note: 'Thanh toán đủ.',
+        createdById: doctors[0].id,
+      },
+      {
+        invoiceId: invoices[1].id,
+        amount: 150000,
+        paymentMethod: 'EWALLET',
+        paidAt: daysAgo(6),
+        note: 'Trả trước một phần.',
+        createdById: doctors[1].id,
+      },
+    ],
+  });
+
+  console.log('🌱 Seed full-stack telehealth data đã nạp xong: users, doctors, appointments, prescriptions, messages, vital signs, call logs, AI summaries, billing invoices, payments.');
 }
 
 main()

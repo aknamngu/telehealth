@@ -6,3 +6,10 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL ?? 'http://localhost:3000';
 export const socket = io(SOCKET_URL, {
   autoConnect: false, // Mình sẽ chủ động connect khi user vào phòng khám
 });
+
+export function connectSocket(accessToken: string) {
+  socket.auth = { token: accessToken };
+  if (!socket.connected) {
+    socket.connect();
+  }
+}

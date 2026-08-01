@@ -30,10 +30,10 @@ export class MessagesService {
     }
 
     // Kiểm tra người gửi (User) có tồn tại không
-    const user = await this.prisma.user.findUnique({
+    const sender = await this.prisma.user.findUnique({
       where: { id: senderId },
     });
-    if (!user) {
+    if (!sender) {
       throw new BadRequestException('Người gửi không tồn tại trên hệ thống!');
     }
 
