@@ -15,6 +15,14 @@ interface IncomingCallPayload {
   fromRole: string;
 }
 
+interface EmergencyCallPayload {
+  appointmentId: string;
+  doctorId?: number;
+  fromName: string;
+  emergencyType: string;
+  details?: string;
+}
+
 function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation();
 
@@ -25,33 +33,129 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return children;
 }
 
-// Popup thông báo cuộc gọi đến — hiển thị ở MỌI trang cho bác sĩ
+// Popup thông báo cuộc gọi đến / Báo động Cấp cứu SOS — hiển thị ở MỌI trang cho bác sĩ
 function DoctorCallListener() {
   const authUser = getAuthUser() as AuthUser | null;
   const navigate = useNavigate();
   const [incomingCall, setIncomingCall] = useState<IncomingCallPayload | null>(null);
+  const [emergencyCall, setEmergencyCall] = useState<EmergencyCallPayload | null>(null);
 
   useEffect(() => {
     if (!authUser || authUser.role !== 'DOCTOR') return;
 
-    const handler = (payload: IncomingCallPayload) => {
+    const normalCallHandler = (payload: IncomingCallPayload) => {
       console.log('Doctor received call:invite', payload);
       setIncomingCall(payload);
     };
 
-    socket.on('call:invite', handler);
+    const emergencyCallHandler = (payload: EmergencyCallPayload) => {
+      console.log('🚨 Doctor received EMERGENCY call:emergency', payload);
+      setEmergencyCall(payload);
+    };
+
+    socket.on('call:invite', normalCallHandler);
+    socket.on('call:emergency', emergencyCallHandler);
 
     return () => {
-      socket.off('call:invite', handler);
+      socket.off('call:invite', normalCallHandler);
+      socket.off('call:emergency', emergencyCallHandler);
     };
   }, [authUser?.id, authUser?.role]);
 
+  // 1. Nếu có cuộc gọi CẤP CỨU KHẨN CẤP SOS (Ưu tiên số 1)
+  if (emergencyCall) {
+    const acceptEmergency = () => {
+      const { appointmentId, doctorId } = emergencyCall;
+      
+      // Nếu bác sĩ đang trong cuộc gọi thường khác -> phát tín hiệu override
+      if (incomingCall) {
+        socket.emit('call:emergency:override', {
+          emergencyAppointmentId: appointmentId,
+          previousAppointmentId: incomingCall.appointmentId,
+          doctorId: doctorId ?? authUser?.id ?? 1,
+        });
+      }
+
+      setEmergencyCall(null);
+      setIncomingCall(null);
+      const docParam = doctorId ?? authUser?.id ?? 1;
+      navigate(`/clinic?doc=${docParam}&appointmentId=${appointmentId}&autoAccept=true&isEmergency=true`);
+    };
+
+    const declineEmergency = () => {
+      setEmergencyCall(null);
+    };
+
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-md">
+        <div className="w-full max-w-md overflow-hidden rounded-3xl border-4 border-rose-500 bg-white shadow-[0_0_50px_rgba(244,63,94,0.5)] animate-pulse">
+          {/* Header Báo động đỏ */}
+          <div className="bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 px-6 py-6 text-white">
+            <div className="flex items-center gap-3">
+              <span className="relative flex h-14 w-14 shrink-0 items-center justify-center">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-40"></span>
+                <span className="relative inline-flex h-14 w-14 items-center justify-center rounded-full bg-white/20 text-3xl backdrop-blur">
+                  🆘
+                </span>
+              </span>
+              <div>
+                <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-[0.2em] text-white">
+                  BÁO ĐỘNG ĐỎ KHẨN CẤP
+                </span>
+                <h2 className="mt-1 text-2xl font-black tracking-tight">CA CẤP CỨU NGUY CẤP</h2>
+              </div>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="space-y-3 px-6 py-6">
+            <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-rose-600">Loại tình huống khẩn cấp</p>
+              <p className="mt-1 text-lg font-black text-rose-950">
+                {emergencyCall.emergencyType || 'Cấp cứu nguy kịch'}
+              </p>
+            </div>
+
+            <p className="text-sm leading-6 text-slate-700">
+              Bệnh nhân <span className="font-bold text-slate-900">{emergencyCall.fromName}</span> đang yêu cầu trợ giúp y tế khẩn cấp ngay lập tức!
+            </p>
+            {emergencyCall.details && (
+              <p className="text-xs text-slate-500 italic">" {emergencyCall.details} "</p>
+            )}
+
+            {incomingCall && (
+              <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 font-semibold border border-amber-200">
+                ⚠️ Chấp nhận ca này sẽ tự động ưu tiên tạm ngắt phiên tư vấn thường hiện tại của bạn để cứu ca cấp cứu!
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+            <button
+              onClick={declineEmergency}
+              className="flex-1 rounded-full border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Bỏ qua
+            </button>
+            <button
+              onClick={acceptEmergency}
+              className="flex-[2] rounded-full bg-gradient-to-r from-rose-600 to-red-600 py-3 text-sm font-black text-white shadow-lg shadow-rose-600/40 transition hover:from-rose-700 hover:to-red-700 active:scale-95 flex items-center justify-center gap-2"
+            >
+              🚨 ỨNG CỨU NGAY
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Cuộc gọi thường
   if (!incomingCall) return null;
 
   const accept = () => {
     const { appointmentId, doctorId } = incomingCall;
     setIncomingCall(null);
-    // Điều hướng bác sĩ vào trang CLINIC (đẹp) với autoAccept=true
     const docParam = doctorId ?? authUser?.id ?? 1;
     navigate(`/clinic?doc=${docParam}&appointmentId=${appointmentId}&autoAccept=true`);
   };
@@ -117,7 +221,6 @@ function App() {
     socket.connect();
 
     if (authUser.role === 'DOCTOR') {
-      // Bác sĩ join room cá nhân để nhận call:invite từ bệnh nhân ở MỌI trang
       socket.emit('joinRoom', `doctor_${authUser.id}`);
       console.log('Doctor socket joined room:', `doctor_${authUser.id}`);
     }
@@ -129,7 +232,6 @@ function App() {
 
   return (
     <Router>
-      {/* DoctorCallListener phải nằm bên trong Router để dùng useNavigate */}
       <DoctorCallListener />
       <Routes>
         <Route path="/" element={<Home />} />
@@ -143,7 +245,6 @@ function App() {
             </RequireAuth>
           }
         />
-        {/* Giữ route /consultation để backward compatible, nhưng mọi luồng mới đều dùng /clinic */}
       </Routes>
     </Router>
   );

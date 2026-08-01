@@ -37,6 +37,29 @@ export class AppointmentsService {
       throw new ForbiddenException('Bác sĩ chỉ có thể tạo lịch cho chính mình!');
     }
 
+    // 2.5 Kiểm tra xem Bác sĩ đã có lịch trùng ngày và khung giờ này chưa
+    const targetDate = new Date(appointmentDate);
+    const dateStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+    const dateEnd = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59);
+
+    const existingConflict = await this.prisma.appointment.findFirst({
+      where: {
+        doctorId: resolvedDoctorId,
+        appointmentDate: {
+          gte: dateStart,
+          lte: dateEnd,
+        },
+        startTime,
+        status: {
+          notIn: ['CANCELLED'],
+        },
+      },
+    });
+
+    if (existingConflict) {
+      throw new BadRequestException(`Bác sĩ đã có lịch khám vào khung giờ ${startTime} - ${endTime} ngày ${targetDate.toLocaleDateString('vi-VN')} rồi! Vui lòng chọn khung giờ khác.`);
+    }
+
     // 3. Tiến hành lưu lịch hẹn mới vào MySQL Docker
     const appointment = await this.prisma.appointment.create({
       data: {

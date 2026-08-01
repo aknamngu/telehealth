@@ -1,17 +1,17 @@
 import { socket } from './socket';
 import { useEffect, useRef, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getAuthUser } from './auth';
+import { getAuthToken, getAuthUser } from './auth';
 import {
   Activity,
   ArrowLeft,
   CalendarDays,
+  Clock,
   Heart,
   MicOff,
   PhoneOff,
   Send,
   ShieldCheck,
-  Sparkles,
   Stethoscope,
   Video,
   VideoOff,
@@ -49,9 +49,28 @@ interface ApiWrapper<T> {
   data: T;
 }
 
-type CallStatus = 'idle' | 'calling' | 'connected' | 'declined' | 'ended';
+type CallStatus = 'idle' | 'calling' | 'connected' | 'declined' | 'ended' | 'busy';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+
+const TIME_SLOTS = [
+  { start: '08:00', end: '08:30' },
+  { start: '08:30', end: '09:00' },
+  { start: '09:00', end: '09:30' },
+  { start: '09:30', end: '10:00' },
+  { start: '10:00', end: '10:30' },
+  { start: '14:00', end: '14:30' },
+  { start: '14:30', end: '15:00' },
+  { start: '15:00', end: '15:30' },
+  { start: '15:30', end: '16:00' },
+];
+
+const EMERGENCY_TYPES = [
+  { id: 'drowning', label: '🏊‍♂️ Đuối nước / Ngạt thở', desc: 'Bệnh nhân vừa vớt lên, ngạt nước, cần hướng dẫn ép tim / hô hấp nhân tạo khẩn cấp!' },
+  { id: 'accident', label: '🚗 Tai nạn / Chấn thương nặng', desc: 'Mất máu, gãy xương hoặc chấn thương nguy kịch tại hiện trường.' },
+  { id: 'cardiac', label: '🫀 Co giật / Ngưng tim đột ngột', desc: 'Bệnh nhân bất tỉnh, co giật hoặc đột ngụy cần can thiệp gấp.' },
+  { id: 'other', label: '⚠️ Cấp cứu khẩn cấp khác', desc: 'Các tình huống nguy kịch tính mạng khác.' },
+];
 
 function Clinic() {
   const navigate = useNavigate();
@@ -61,25 +80,41 @@ function Clinic() {
   const queryAppointmentId = searchParams.get('appointmentId');
   const docId = queryDocId ?? '1';
   const appointmentId = queryAppointmentId ?? queryDocId ?? '1';
-  // Bác sĩ vào qua popup thông báo → autoAccept=true → tự emit call:accept
   const autoAccept = searchParams.get('autoAccept') === 'true';
+  const isEmergencyParam = searchParams.get('isEmergency') === 'true';
 
+  const [doctorsList, setDoctorsList] = useState<Doctor[]>([]);
   const [doctor, setDoctor] = useState<Doctor | null>(null);
+  const [selectedDoctorId, setSelectedDoctorId] = useState<number>(Number(docId));
   const [heartRate, setHeartRate] = useState(84);
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [callStatus, setCallStatus] = useState<CallStatus>('idle');
+  const [busyMessage, setBusyMessage] = useState<string>('');
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  // Theo dõi camera đã sẵn sàng chưa
   const [cameraReady, setCameraReady] = useState(false);
+  const [isEmergencyCall, setIsEmergencyCall] = useState(isEmergencyParam);
+
+  // Modals state
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+  
+  // Schedule Form State
+  const [scheduleDate, setScheduleDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedSlotIndex, setSelectedSlotIndex] = useState<number>(0);
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingMessage, setBookingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Emergency Form State
+  const [selectedEmergencyType, setSelectedEmergencyType] = useState(EMERGENCY_TYPES[0].id);
+  const [emergencyDetails, setEmergencyDetails] = useState('');
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
-  // Lưu appointmentId ổn định qua ref để dùng trong closure
   const appointmentIdRef = useRef(appointmentId);
   appointmentIdRef.current = appointmentId;
 
@@ -103,17 +138,39 @@ function Clinic() {
     };
   }, []);
 
-  // ─── 2. Tải thông tin bác sĩ ─────────────────────────────────────────────
+  // ─── 2. Tải danh sách Bác sĩ từ API backend ──────────────────────────────
   useEffect(() => {
-    const fallback: Doctor = { id: 1, name: 'BS. Trực tuyến', specialty: 'Đa khoa' };
-    if (!docId) { setDoctor(fallback); return; }
-    fetch(`${API_URL}/doctors/${docId}`)
-      .then((r) => { if (!r.ok) throw new Error('not found'); return r.json(); })
-      .then((payload: ApiWrapper<ApiDoctorUser> | ApiDoctorUser) => {
-        const d = Array.isArray(payload) ? payload[0] : 'data' in payload ? payload.data : payload;
-        setDoctor({ id: d.id, name: d.fullName, specialty: d.doctorProfile?.specialty ?? 'Đa khoa' });
+    fetch(`${API_URL}/doctors`)
+      .then((r) => r.json())
+      .then((payload: ApiWrapper<ApiDoctorUser[]> | ApiDoctorUser[]) => {
+        const records = Array.isArray(payload) ? payload : payload.data;
+        if (Array.isArray(records) && records.length > 0) {
+          const docs: Doctor[] = records.map((d) => ({
+            id: d.id,
+            name: d.fullName,
+            specialty: d.doctorProfile?.specialty ?? 'Đa khoa',
+          }));
+
+          setDoctorsList(docs);
+
+          // Chọn bác sĩ khớp với docId hoặc lấy bác sĩ đầu tiên trong DB
+          const currentDoc = docs.find((d) => d.id === Number(docId)) ?? docs[0];
+          setDoctor(currentDoc);
+          setSelectedDoctorId(currentDoc.id);
+        } else {
+          // Fallback nếu chưa có bác sĩ
+          const fallback = { id: 1, name: 'BS. Trực tuyến', specialty: 'Đa khoa' };
+          setDoctorsList([fallback]);
+          setDoctor(fallback);
+          setSelectedDoctorId(1);
+        }
       })
-      .catch(() => setDoctor(fallback));
+      .catch(() => {
+        const fallback = { id: 1, name: 'BS. Trực tuyến', specialty: 'Đa khoa' };
+        setDoctorsList([fallback]);
+        setDoctor(fallback);
+        setSelectedDoctorId(1);
+      });
   }, [docId]);
 
   // ─── 3. Nhịp tim giả lập ─────────────────────────────────────────────────
@@ -127,7 +184,7 @@ function Clinic() {
   // ─── 4. Scroll chat ───────────────────────────────────────────────────────
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // ─── 5. Tạo RTCPeerConnection (một lần khi mount) ────────────────────────
+  // ─── 5. Tạo RTCPeerConnection ──────────────────────────────────────────────
   useEffect(() => {
     const pc = new RTCPeerConnection({
       iceServers: [
@@ -164,11 +221,10 @@ function Clinic() {
     };
   }, []);
 
-  // ─── 6. Setup Socket listeners (sau khi camera + PC sẵn sàng) ────────────
+  // ─── 6. Setup Socket Listeners (Xử lý Gọi thường, Báo bận, Cấp cứu) ──────
   useEffect(() => {
     if (!cameraReady || !appointmentId) return;
 
-    // Join phòng chung của cuộc hẹn
     socket.emit('joinRoom', appointmentId);
     console.log(`🚪 Joined room: room_${appointmentId}`);
 
@@ -176,18 +232,16 @@ function Clinic() {
       socket.emit('joinRoom', `doctor_${authUser.id}`);
     }
 
-    // Helper: thêm tracks vào pc
     const addLocalTracks = () => {
       const pc = pcRef.current;
       if (!pc || !localStreamRef.current) return;
-      if (pc.getSenders().length > 0) return; // Tránh add trùng
+      if (pc.getSenders().length > 0) return;
       localStreamRef.current.getTracks().forEach((track) => {
         pc.addTrack(track, localStreamRef.current!);
         console.log('🎙️ Added local track:', track.kind);
       });
     };
 
-    // ── BỆNH NHÂN: nhận call:accept từ bác sĩ → tạo Offer ──
     const handleCallAccept = async () => {
       if (authUser?.role !== 'PATIENT') return;
       console.log('✅ Patient received call:accept, creating offer...');
@@ -197,14 +251,12 @@ function Clinic() {
         const offer = await pc.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: true });
         await pc.setLocalDescription(offer);
         socket.emit('offer', { offer, appointmentId });
-        console.log('📤 Offer sent');
         setCallStatus('calling');
       } catch (err) {
         console.error('Lỗi tạo offer:', err);
       }
     };
 
-    // ── BÁC SĨ: nhận Offer → tạo Answer ──
     const handleOffer = async (offer: RTCSessionDescriptionInit) => {
       if (authUser?.role !== 'DOCTOR') return;
       console.log('📥 Doctor received offer, creating answer...');
@@ -215,13 +267,11 @@ function Clinic() {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket.emit('answer', { answer, appointmentId });
-        console.log('📤 Answer sent');
       } catch (err) {
         console.error('Lỗi tạo answer:', err);
       }
     };
 
-    // ── BỆNH NHÂN: nhận Answer ──
     const handleAnswer = async (answer: RTCSessionDescriptionInit) => {
       if (authUser?.role !== 'PATIENT') return;
       console.log('📥 Patient received answer');
@@ -242,26 +292,36 @@ function Clinic() {
       }
     };
 
+    const handleCallBusy = (payload: { message: string }) => {
+      console.log('⚠️ Received call:busy event:', payload);
+      setCallStatus('busy');
+      setBusyMessage(payload.message || 'Bác sĩ hiện đang trong phiên tư vấn khác. Vui lòng đặt lịch hoặc chờ bác sĩ hoàn thành!');
+    };
+
     const handleCallDecline = () => setCallStatus('declined');
 
-    const handleCallEnd = () => {
+    const handleCallEnd = (data?: { reason?: string; message?: string }) => {
+      console.log('📴 Call ended', data);
       setCallStatus('ended');
       pcRef.current?.close();
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+      if (data?.message) {
+        alert(data.message);
+      }
     };
 
     socket.on('call:accept', handleCallAccept);
     socket.on('offer', handleOffer);
     socket.on('answer', handleAnswer);
     socket.on('candidate', handleCandidate);
+    socket.on('call:busy', handleCallBusy);
     socket.on('call:decline', handleCallDecline);
     socket.on('call:end', handleCallEnd);
 
-    // ── BÁC SĨ với autoAccept: emit call:accept ngay sau khi đã setup xong ──
     if (authUser?.role === 'DOCTOR' && autoAccept) {
       console.log('🩺 Doctor autoAccept: emitting call:accept');
       addLocalTracks();
-      socket.emit('call:accept', { appointmentId });
+      socket.emit('call:accept', { appointmentId, doctorId: authUser.id, fromName: authUser.fullName });
       setCallStatus('calling');
     }
 
@@ -270,16 +330,20 @@ function Clinic() {
       socket.off('offer', handleOffer);
       socket.off('answer', handleAnswer);
       socket.off('candidate', handleCandidate);
+      socket.off('call:busy', handleCallBusy);
       socket.off('call:decline', handleCallDecline);
       socket.off('call:end', handleCallEnd);
     };
-  }, [cameraReady, appointmentId, authUser?.id, authUser?.role, autoAccept]);
+  }, [cameraReady, appointmentId, authUser?.id, authUser?.fullName, authUser?.role, autoAccept]);
 
   // ─── Actions ──────────────────────────────────────────────────────────────
   const startCall = useCallback(() => {
     if (callStatus !== 'idle') return;
-    const targetDoctorId = doctor?.id ?? Number(docId);
+    const targetDoctorId = selectedDoctorId || doctor?.id || Number(docId);
     setCallStatus('calling');
+    setBusyMessage('');
+    setIsEmergencyCall(false);
+
     socket.emit('call:invite', {
       appointmentId,
       doctorId: targetDoctorId,
@@ -287,12 +351,89 @@ function Clinic() {
       fromRole: authUser?.role ?? 'PATIENT',
     });
     console.log('📞 call:invite emitted', { appointmentId, doctorId: targetDoctorId });
-  }, [callStatus, doctor?.id, docId, appointmentId, authUser?.fullName, authUser?.role]);
+  }, [callStatus, selectedDoctorId, doctor?.id, docId, appointmentId, authUser?.fullName, authUser?.role]);
+
+  // Kích hoạt BÁO ĐỘNG CẤP CỨU SOS
+  const handleEmergencySubmit = (e: FormEvent) => {
+    e.preventDefault();
+    setShowEmergencyModal(false);
+
+    const emergencyObj = EMERGENCY_TYPES.find((t) => t.id === selectedEmergencyType);
+    const targetDoctorId = selectedDoctorId || doctor?.id || Number(docId);
+
+    setCallStatus('calling');
+    setIsEmergencyCall(true);
+
+    socket.emit('call:emergency', {
+      appointmentId,
+      doctorId: targetDoctorId,
+      fromName: authUser?.fullName ?? 'Bệnh nhân khẩn cấp',
+      emergencyType: emergencyObj?.label ?? 'Cấp cứu nguy kịch',
+      details: emergencyDetails,
+    });
+
+    console.log('🚨 SOS Emergency emitted:', { appointmentId, emergencyType: emergencyObj?.label });
+  };
+
+  // Đặt lịch khám theo slot
+  const handleScheduleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    const token = getAuthToken();
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    setBookingLoading(true);
+    setBookingMessage(null);
+
+    const slot = TIME_SLOTS[selectedSlotIndex];
+    const targetDoctorId = selectedDoctorId || doctor?.id || Number(docId);
+
+    try {
+      const response = await fetch(`${API_URL}/appointments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          doctorId: targetDoctorId,
+          appointmentDate: scheduleDate,
+          startTime: slot.start,
+          endTime: slot.end,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message ?? 'Đã có lỗi xảy ra khi đặt lịch!');
+      }
+
+      setBookingMessage({
+        type: 'success',
+        text: `Đặt lịch khám với ${doctor?.name ?? 'Bác sĩ'} (${slot.start} - ${slot.end} ngày ${scheduleDate}) thành công!`,
+      });
+      setTimeout(() => {
+        setShowScheduleModal(false);
+        setBookingMessage(null);
+      }, 2500);
+    } catch (err) {
+      setBookingMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Không thể đặt lịch trùng!',
+      });
+    } finally {
+      setBookingLoading(false);
+    }
+  };
 
   const endCall = useCallback(() => {
     socket.emit('call:end', { appointmentId });
     pcRef.current?.close();
     setCallStatus('ended');
+    setIsEmergencyCall(false);
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
   }, [appointmentId]);
 
@@ -318,8 +459,8 @@ function Clinic() {
 
   const isConnected = callStatus === 'connected';
   const isCalling = callStatus === 'calling';
+  const isBusy = callStatus === 'busy';
 
-  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen text-slate-900">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.16),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.12),_transparent_28%),linear-gradient(180deg,_#f8fafc_0%,_#edf5ff_50%,_#f8fafc_100%)]" />
@@ -347,24 +488,32 @@ function Clinic() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Action Header Buttons */}
+            {authUser?.role !== 'DOCTOR' && (
+              <>
+                <button
+                  onClick={() => setShowScheduleModal(true)}
+                  className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3.5 py-2 text-xs font-bold text-sky-700 hover:bg-sky-100 transition"
+                >
+                  <Clock className="h-4 w-4" />
+                  Đặt lịch hẹn
+                </button>
+                <button
+                  onClick={() => setShowEmergencyModal(true)}
+                  className="inline-flex items-center gap-2 rounded-full bg-rose-600 px-3.5 py-2 text-xs font-black text-white shadow-md shadow-rose-500/30 hover:bg-rose-700 transition animate-pulse"
+                >
+                  🆘 CẤP CỨU SOS
+                </button>
+              </>
+            )}
+
             {isConnected && (
               <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                Đang kết nối
+                {isEmergencyCall ? 'Cấp cứu SOS đang kết nối' : 'Đang kết nối'}
               </div>
             )}
-            {isCalling && !isConnected && (
-              <div className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
-                {authUser?.role === 'DOCTOR' ? 'Đang kết nối...' : 'Đang chờ bác sĩ...'}
-              </div>
-            )}
-            {!isConnected && !isCalling && (
-              <div className="hidden items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 sm:inline-flex">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                Đang trực tuyến
-              </div>
-            )}
+
             <div className="rounded-full border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-bold text-sky-700">
               Mã cuộc hẹn #{appointmentId}
             </div>
@@ -379,20 +528,29 @@ function Clinic() {
             {/* Card Header */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
               <div className="flex items-center gap-3">
-                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-950 text-white shadow-lg">
+                <div className={`grid h-11 w-11 place-items-center rounded-2xl text-white shadow-lg ${isEmergencyCall ? 'bg-rose-600' : 'bg-slate-950'}`}>
                   <Video className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Phòng video</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Phòng video</p>
+                    {isEmergencyCall && (
+                      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-black uppercase text-rose-700">
+                        🚨 Ca Cấp Cứu SOS
+                      </span>
+                    )}
+                  </div>
                   <h1 className="text-lg font-black tracking-tight text-slate-950">{doctor?.name ?? 'Đang tải...'}</h1>
                 </div>
               </div>
+
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700">
                   <ShieldCheck className="h-4 w-4" />
                   Kết nối bảo mật
                 </div>
-                {/* Bệnh nhân: nút Bắt đầu gọi */}
+
+                {/* Nút Gọi thường */}
                 {callStatus === 'idle' && authUser?.role !== 'DOCTOR' && (
                   <button
                     onClick={startCall}
@@ -402,6 +560,7 @@ function Clinic() {
                     Bắt đầu gọi
                   </button>
                 )}
+
                 {/* Nút Kết thúc khi đang gọi hoặc đã kết nối */}
                 {(isCalling || isConnected) && (
                   <button
@@ -417,17 +576,17 @@ function Clinic() {
 
             {/* ═══ VIDEO AREA ═══ */}
             <div className="relative">
-              {/* ── CONNECTED: Remote video chiếm toàn bộ, local PiP góc phải ── */}
+              {/* CONNECTED: Remote video + Local PiP */}
               {isConnected ? (
                 <div className="relative h-[420px] w-full overflow-hidden bg-slate-900">
-                  {/* Remote video */}
                   <video
                     ref={remoteVideoRef}
                     autoPlay
                     playsInline
                     className="h-full w-full object-cover"
                   />
-                  <div className="absolute left-4 top-4 z-10 rounded-full border border-white/20 bg-black/50 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
+                  <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-white/20 bg-black/50 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
+                    {isEmergencyCall && <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />}
                     {authUser?.role === 'PATIENT' ? (doctor?.name ?? 'Bác sĩ') : 'Bệnh nhân'}
                   </div>
 
@@ -462,7 +621,7 @@ function Clinic() {
                   </div>
                 </div>
               ) : (
-                /* ── IDLE / CALLING / ENDED: Màn hình chờ ── */
+                /* IDLE / CALLING / BUSY / ENDED State */
                 <div className="relative h-[420px] w-full overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.25),_transparent_28%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)]">
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center text-white">
                     {callStatus === 'idle' && (
@@ -474,11 +633,28 @@ function Clinic() {
                         <p className="text-sm leading-7 text-slate-300">
                           {authUser?.role === 'DOCTOR'
                             ? 'Bệnh nhân chưa bắt đầu cuộc gọi.'
-                            : 'Bấm "Bắt đầu gọi" để kết nối với bác sĩ.'}
+                            : 'Bấm "Bắt đầu gọi" hoặc chọn nút SOS nếu gặp tình huống khẩn cấp.'}
                         </p>
                       </div>
                     )}
-                    {isCalling && (
+
+                    {/* ĐANG GỌI CẤP CỨU NGUY CẤP */}
+                    {isCalling && isEmergencyCall && (
+                      <div className="rounded-3xl border border-rose-500/40 bg-rose-500/10 px-8 py-6 shadow-2xl backdrop-blur animate-pulse">
+                        <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-rose-600 text-3xl">
+                          🆘
+                        </div>
+                        <p className="text-2xl font-black text-rose-300 uppercase tracking-wide">
+                          ĐANG PHÁT BÁO ĐỘNG CẤP CỨU SOS
+                        </p>
+                        <p className="mt-2 max-w-md text-sm leading-6 text-slate-200">
+                          Hệ thống đang ưu tiên gửi thông báo nguy cấp tới toàn bộ bác sĩ trực tuyến. Vui lòng giữ máy!
+                        </p>
+                      </div>
+                    )}
+
+                    {/* ĐANG GỌI THƯỜNG */}
+                    {isCalling && !isEmergencyCall && (
                       <div className="rounded-3xl border border-white/10 bg-white/5 px-8 py-6 shadow-lg backdrop-blur">
                         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center">
                           <span className="relative flex h-12 w-12">
@@ -492,6 +668,34 @@ function Clinic() {
                         <p className="mt-2 text-sm text-slate-300">Phiên tư vấn sẽ được kết nối ngay khi cả 2 sẵn sàng.</p>
                       </div>
                     )}
+
+                    {/* BÁC SĨ BẬN CUỘC GỌI KHIẾN BỆNH NHÂN KHÔNG GỌI ĐƯỢC */}
+                    {isBusy && (
+                      <div className="max-w-md rounded-3xl border border-amber-400/40 bg-amber-500/15 p-6 backdrop-blur text-center">
+                        <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-amber-500 text-slate-950 font-black">
+                          ⚠️
+                        </div>
+                        <p className="text-xl font-black text-amber-300">BÁC SĨ ĐANG BẬN TƯ VẤN</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-200">
+                          {busyMessage || 'Bác sĩ hiện đang trong phiên tư vấn trực tiếp với bệnh nhân khác. Bạn vui lòng Đặt lịch hẹn hoặc chờ ít phút!'}
+                        </p>
+                        <div className="mt-5 flex justify-center gap-3">
+                          <button
+                            onClick={() => setShowScheduleModal(true)}
+                            className="rounded-full bg-sky-500 px-5 py-2 text-xs font-bold text-white shadow hover:bg-sky-600 transition"
+                          >
+                            📅 Đặt lịch khám
+                          </button>
+                          <button
+                            onClick={() => setCallStatus('idle')}
+                            className="rounded-full bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/20 transition"
+                          >
+                            Đóng
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {callStatus === 'declined' && (
                       <div className="rounded-3xl border border-rose-400/30 bg-rose-500/10 px-8 py-6 backdrop-blur">
                         <p className="text-xl font-bold text-rose-300">Cuộc gọi đã bị từ chối</p>
@@ -500,6 +704,7 @@ function Clinic() {
                         </button>
                       </div>
                     )}
+
                     {callStatus === 'ended' && (
                       <div className="rounded-3xl border border-white/10 bg-white/5 px-8 py-6 backdrop-blur">
                         <p className="text-xl font-bold">Cuộc gọi đã kết thúc</p>
@@ -510,7 +715,7 @@ function Clinic() {
                     )}
                   </div>
 
-                  {/* Local camera preview nhỏ góc phải khi chưa connected */}
+                  {/* Local camera preview nhỏ góc phải */}
                   <div className="absolute bottom-5 right-5 h-32 w-48 overflow-hidden rounded-2xl border border-white/20 bg-black/50 shadow-lg">
                     <video ref={localVideoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
                     <div className="absolute left-2 top-2 rounded bg-black/50 px-2 py-0.5 text-[10px] font-bold text-white">BẠN</div>
@@ -549,69 +754,48 @@ function Clinic() {
               <p className="mt-4 text-sm leading-7 text-slate-600">Giao diện số liệu được làm thành những khối riêng để giảm rối mắt và tăng độ cao cấp cho màn hình.</p>
             </div>
           </div>
-
-          {/* AI Monitoring */}
-          <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.24em] text-sky-700">AI monitoring</p>
-                <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">Giám sát sinh tồn và kết nối khám bệnh</h2>
-              </div>
-              <div className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500">
-                <Sparkles className="h-4 w-4 text-sky-600" />
-                Cập nhật gần nhất: 1 giây trước
-              </div>
-            </div>
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              <div className="rounded-[1.75rem] border border-slate-100 bg-gradient-to-br from-white to-rose-50 p-5 shadow-sm">
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-rose-500">Nhịp tim hiện tại</p>
-                <div className="mt-4 flex items-end gap-2">
-                  <span className="text-5xl font-black tracking-tight text-slate-950 tabular-nums">{heartRate}</span>
-                  <span className="pb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">bpm</span>
-                </div>
-                <div className="mt-4 flex h-12 items-end gap-1">
-                  {[32, 56, 40, 72, 48, 84, 60, 76].map((h, i) => (
-                    <div key={i} className="flex-1 rounded-full bg-rose-300/70" style={{ height: `${h}%` }} />
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-[1.75rem] border border-slate-100 bg-gradient-to-br from-white to-cyan-50 p-5 shadow-sm">
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-600">Phân tích nền</p>
-                <div className="mt-4 flex items-end gap-2">
-                  <span className="text-5xl font-black tracking-tight text-slate-950">100</span>
-                  <span className="pb-2 text-sm font-semibold uppercase tracking-[0.2em] text-cyan-600">% SpO2</span>
-                </div>
-                <div className="mt-4 grid grid-cols-4 gap-2">
-                  {['A', 'B', 'C', 'D'].map((item, i) => (
-                    <div key={item} className="rounded-2xl bg-cyan-100/70 text-center text-xs font-black text-cyan-700" style={{ paddingBlock: `${18 + i * 4}px` }}>{item}</div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="mt-5 rounded-[1.5rem] border border-sky-100 bg-sky-50 p-4 text-sm leading-7 text-slate-600">
-              <div className="flex items-center gap-2 font-semibold text-sky-700">
-                <Sparkles className="h-4 w-4" />
-                Mô tả phiên tư vấn
-              </div>
-              <p className="mt-2">Hệ thống đang theo dõi các chỉ số cơ bản, ghi nhận nội dung trao đổi và giữ nhịp giao diện nhẹ, sạch, dễ nhìn hơn cho người bệnh.</p>
-            </div>
-          </div>
         </section>
 
         {/* Sidebar */}
         <aside className="space-y-6">
-          {/* Doctor Info */}
+          {/* Doctor Info & Doctor Selector */}
           <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.24em] text-sky-700">Bác sĩ</p>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-sky-700">Bác sĩ tư vấn</p>
                 <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">{doctor?.name ?? 'Đang tải...'}</h2>
-                <p className="mt-2 text-sm text-slate-500">{doctor?.specialty ?? 'Chuyên khoa'}</p>
+                <p className="mt-1 text-sm text-slate-500">{doctor?.specialty ?? 'Chuyên khoa'}</p>
               </div>
               <div className="grid h-14 w-14 place-items-center rounded-3xl bg-slate-950 text-white">
                 <Stethoscope className="h-6 w-6" />
               </div>
             </div>
+
+            {/* Chọn bác sĩ khác */}
+            {doctorsList.length > 1 && (
+              <div className="mt-4">
+                <label className="block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-1">
+                  Đổi bác sĩ tư vấn:
+                </label>
+                <select
+                  value={selectedDoctorId}
+                  onChange={(e) => {
+                    const id = Number(e.target.value);
+                    setSelectedDoctorId(id);
+                    const found = doctorsList.find((d) => d.id === id);
+                    if (found) setDoctor(found);
+                  }}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800 focus:border-sky-500 focus:outline-none"
+                >
+                  {doctorsList.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} ({d.specialty})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="mt-5 grid gap-3 text-sm text-slate-600">
               <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
                 <span className="flex items-center gap-2 font-semibold text-slate-500">
@@ -625,15 +809,15 @@ function Clinic() {
                   <Activity className="h-4 w-4 text-emerald-600" />
                   Trạng thái
                 </span>
-                <span className={`font-bold ${isConnected ? 'text-emerald-600' : isCalling ? 'text-amber-600' : 'text-emerald-600'}`}>
-                  {isConnected ? 'Đang kết nối' : isCalling ? 'Đang gọi...' : 'Sẵn sàng'}
+                <span className={`font-bold ${isConnected ? 'text-emerald-600' : isCalling ? 'text-amber-600' : isBusy ? 'text-rose-600' : 'text-emerald-600'}`}>
+                  {isConnected ? 'Đang kết nối' : isCalling ? 'Đang gọi...' : isBusy ? 'Bác sĩ bận' : 'Sẵn sàng'}
                 </span>
               </div>
             </div>
           </div>
 
           {/* Chat */}
-          <div className="flex h-[560px] flex-col overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+          <div className="flex h-[500px] flex-col overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Chat</p>
@@ -685,6 +869,216 @@ function Clinic() {
           </div>
         </aside>
       </main>
+
+      {/* 📅 MODAL ĐẶT LỊCH THEO KHUNG GIỜ */}
+      {showScheduleModal && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 px-4 py-6 backdrop-blur-sm">
+          <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-600">Đặt lịch trực tuyến</p>
+                <h3 className="text-xl font-black text-slate-900">Chọn khung giờ khám bệnh</h3>
+              </div>
+              <button
+                onClick={() => setShowScheduleModal(false)}
+                className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleScheduleSubmit} className="mt-5 space-y-4">
+              {/* Dropdown Chọn Bác Sĩ */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-1.5">
+                  Bác sĩ phụ trách tư vấn
+                </label>
+                <select
+                  value={selectedDoctorId}
+                  onChange={(e) => {
+                    const id = Number(e.target.value);
+                    setSelectedDoctorId(id);
+                    const found = doctorsList.find((d) => d.id === id);
+                    if (found) setDoctor(found);
+                  }}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 focus:border-sky-500 focus:outline-none"
+                >
+                  {doctorsList.map((doc) => (
+                    <option key={doc.id} value={doc.id}>
+                      {doc.name} — {doc.specialty}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-1.5">
+                  Ngày khám
+                </label>
+                <input
+                  type="date"
+                  value={scheduleDate}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setScheduleDate(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 focus:border-sky-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">
+                  Khung giờ tư vấn
+                </label>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {TIME_SLOTS.map((slot, index) => (
+                    <button
+                      key={`${slot.start}-${slot.end}`}
+                      type="button"
+                      onClick={() => setSelectedSlotIndex(index)}
+                      className={`rounded-2xl border py-3 text-xs font-bold transition ${
+                        selectedSlotIndex === index
+                          ? 'border-sky-600 bg-sky-600 text-white shadow-md'
+                          : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {slot.start} - {slot.end}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {bookingMessage && (
+                <div
+                  className={`rounded-2xl p-3.5 text-xs font-bold ${
+                    bookingMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                  }`}
+                >
+                  {bookingMessage.text}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleModal(false)}
+                  className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={bookingLoading}
+                  className="flex-1 rounded-full bg-sky-600 py-3 text-sm font-bold text-white shadow-lg transition hover:bg-sky-700 disabled:opacity-50"
+                >
+                  {bookingLoading ? 'Đang kiểm tra...' : 'Xác nhận đặt lịch'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 🚨 MODAL KÍCH HOẠT BÁO ĐỘNG CẤP CỨU KHẨN CẤP SOS */}
+      {showEmergencyModal && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-md">
+          <div className="w-full max-w-lg overflow-hidden rounded-3xl border-2 border-rose-500 bg-white p-6 shadow-2xl">
+            <div className="flex items-center gap-3 border-b border-rose-100 pb-4">
+              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-rose-600 text-2xl text-white">
+                🆘
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-600">CẤP CỨU Y TẾ NGUY KỊCH</p>
+                <h3 className="text-xl font-black text-slate-900">Gửi tín hiệu Báo động SOS khẩn cấp</h3>
+              </div>
+            </div>
+
+            <form onSubmit={handleEmergencySubmit} className="mt-5 space-y-4">
+              {/* Select Doctor for Emergency */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-1.5">
+                  Bác sĩ ứng cứu chính
+                </label>
+                <select
+                  value={selectedDoctorId}
+                  onChange={(e) => {
+                    const id = Number(e.target.value);
+                    setSelectedDoctorId(id);
+                    const found = doctorsList.find((d) => d.id === id);
+                    if (found) setDoctor(found);
+                  }}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 focus:border-rose-500 focus:outline-none"
+                >
+                  {doctorsList.map((doc) => (
+                    <option key={doc.id} value={doc.id}>
+                      {doc.name} — {doc.specialty}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">
+                  Chọn tình huống khẩn cấp
+                </label>
+                <div className="space-y-2">
+                  {EMERGENCY_TYPES.map((item) => (
+                    <label
+                      key={item.id}
+                      onClick={() => setSelectedEmergencyType(item.id)}
+                      className={`flex cursor-pointer flex-col rounded-2xl border p-3.5 transition ${
+                        selectedEmergencyType === item.id
+                          ? 'border-rose-500 bg-rose-50/70 shadow-sm'
+                          : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-black text-slate-900">{item.label}</span>
+                        <input
+                          type="radio"
+                          name="emergencyType"
+                          checked={selectedEmergencyType === item.id}
+                          onChange={() => setSelectedEmergencyType(item.id)}
+                          className="h-4 w-4 text-rose-600"
+                        />
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">{item.desc}</p>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-1">
+                  Mô tả ngắn tình trạng hiện tại
+                </label>
+                <textarea
+                  value={emergencyDetails}
+                  onChange={(e) => setEmergencyDetails(e.target.value)}
+                  placeholder="VD: Người bị đuối nước vừa vớt lên bờ lúc 5 phút trước, đang ngạt thở..."
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm focus:border-rose-500 focus:outline-none"
+                  rows={2}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEmergencyModal(false)}
+                  className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 rounded-full bg-rose-600 py-3 text-sm font-black text-white shadow-lg shadow-rose-600/30 transition hover:bg-rose-700 active:scale-95"
+                >
+                  🚨 GỬI BÁO ĐỘNG SOS
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
