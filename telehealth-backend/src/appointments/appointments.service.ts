@@ -64,17 +64,44 @@ export class AppointmentsService {
       throw new BadRequestException(`Bác sĩ đã có lịch khám vào khung giờ ${startTime} - ${endTime} ngày ${targetDate.toLocaleDateString('vi-VN')} rồi! Vui lòng chọn khung giờ khác.`);
     }
 
-    // 3. Tiến hành lưu lịch hẹn mới vào MySQL Docker
-    const appointment = await this.prisma.appointment.create({
-      data: {
-        patientId: resolvedPatientId,
-        doctorId: resolvedDoctorId,
-        appointmentDate: new Date(appointmentDate), // Ép kiểu chuỗi ngày thành Date Object
-        startTime,
-        endTime,
-        status: 'PENDING', // Mặc định khi vừa đặt là Chờ duyệt
-      },
-      include: { patient: { select: { fullName: true } } },
+    // 2.7 Kiểm tra số dư ví bệnh nhân (VD phí khám là 100,000)
+    const FEE = 100000;
+    const wallet = await this.prisma.wallet.findUnique({
+      where: { userId: resolvedPatientId }
+    });
+    if (!wallet || wallet.balance < FEE) {
+      throw new BadRequestException('Số dư ví không đủ để đặt lịch hẹn! (100.000 VNĐ)');
+    }
+
+    // 3. Tiến hành lưu lịch hẹn mới và thanh toán (trừ ví, tạo hoá đơn)
+    const appointment = await this.prisma.$transaction(async (prisma) => {
+      const appt = await prisma.appointment.create({
+        data: {
+          patientId: resolvedPatientId,
+          doctorId: resolvedDoctorId,
+          appointmentDate: new Date(appointmentDate), // Ép kiểu chuỗi ngày thành Date Object
+          startTime,
+          endTime,
+          status: 'PENDING', // Mặc định khi vừa đặt là Chờ duyệt
+        },
+        include: { patient: { select: { fullName: true } } },
+      });
+
+      await prisma.wallet.update({
+        where: { userId: resolvedPatientId },
+        data: { balance: { decrement: FEE } }
+      });
+
+      await prisma.invoice.create({
+        data: {
+          appointmentId: appt.id,
+          patientId: resolvedPatientId,
+          amount: FEE,
+          status: 'PAID'
+        }
+      });
+
+      return appt;
     });
 
     // 4. Emit real-time socket notification tới phòng bác sĩ
@@ -191,10 +218,26 @@ export class AppointmentsService {
     }
 
     // 4. Tiến hành cập nhật xuống MySQL Docker
-    const updatedAppointment = await this.prisma.appointment.update({
-      where: { id },
-      data: { status },
-    });
+    let updatedAppointment;
+    
+    if (status === 'CANCELLED') {
+      updatedAppointment = await this.prisma.$transaction(async (prisma) => {
+        const appt = await prisma.appointment.update({
+          where: { id },
+          data: { status },
+        });
+        await prisma.invoice.updateMany({
+          where: { appointmentId: id, status: 'PAID' },
+          data: { status: 'PENDING_REFUND' }
+        });
+        return appt;
+      });
+    } else {
+      updatedAppointment = await this.prisma.appointment.update({
+        where: { id },
+        data: { status },
+      });
+    }
 
     return {
       message: `Cập nhật trạng thái lịch hẹn sang [${status}] thành công!`,

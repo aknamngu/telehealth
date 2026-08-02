@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
+  Banknote,
   Bell,
   CalendarDays,
   ChartColumn,
@@ -14,6 +15,7 @@ import {
   Sparkles,
   Stethoscope,
   Users,
+  Wallet,
   X,
   XCircle,
 } from 'lucide-react';
@@ -185,6 +187,10 @@ function Dashboard() {
   const [doctorSchedules, setDoctorSchedules] = useState<{startTime: string, endTime: string, isBooked: boolean}[]>([]);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
 
+  // States cho Ví & Hoá đơn
+  const [wallet, setWallet] = useState<{ balance: number } | null>(null);
+  const [invoices, setInvoices] = useState<any[]>([]);
+
   useEffect(() => {
     const token = getAuthToken();
 
@@ -235,10 +241,35 @@ function Dashboard() {
       .finally(() => setLoading(false));
   }, [navigate]);
 
+  const loadWalletAndInvoices = useCallback(() => {
+    const token = getAuthToken();
+    if (!token || !authUser) return;
+
+    if (authUser.role === 'PATIENT' || authUser.role === 'ADMIN' || authUser.role === 'DOCTOR') {
+      fetch(`${API_URL}/wallet/me`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => res.json())
+        .then(data => { if (data.data) setWallet(data.data); })
+        .catch(console.error);
+    }
+    
+    if (authUser.role === 'PATIENT') {
+      fetch(`${API_URL}/wallet/invoices/me`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => res.json())
+        .then(data => { if (data.data) setInvoices(data.data); })
+        .catch(console.error);
+    } else if (authUser.role === 'ADMIN') {
+      fetch(`${API_URL}/wallet/invoices`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => res.json())
+        .then(data => { if (data.data) setInvoices(data.data); })
+        .catch(console.error);
+    }
+  }, [authUser]);
+
   useEffect(() => {
     if (!authUser) return;
     loadDashboard();
-  }, [authUser, loadDashboard]);
+    loadWalletAndInvoices();
+  }, [authUser, loadDashboard, loadWalletAndInvoices]);
 
   // Tải danh sách lịch rảnh khi đổi ngày (Chỉ cho bác sĩ)
   const loadDoctorSchedules = useCallback(() => {
@@ -367,6 +398,23 @@ function Dashboard() {
     } catch { /* ignore */ }
     finally { setCancellingId(null); }
   }
+
+  const handleRefund = async (invoiceId: number) => {
+    if (!window.confirm('Bạn có chắc chắn muốn hoàn tiền cho giao dịch này?')) return;
+    const token = getAuthToken();
+    try {
+      const res = await fetch(`${API_URL}/wallet/invoices/${invoiceId}/refund`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Lỗi hoàn tiền');
+      alert('Hoàn tiền thành công!');
+      loadWalletAndInvoices();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
 
   // Quản lý trạng thái User (Khóa / Mở khóa)
   async function toggleUserStatus(userId: number, currentStatus: boolean) {
@@ -738,6 +786,56 @@ function Dashboard() {
 
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-4">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
+            <Wallet className="h-4 w-4" />
+            Quản lý Hoá Đơn / Hoàn Tiền
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Mã hoá đơn</th>
+                  <th className="px-4 py-3">Bệnh nhân</th>
+                  <th className="px-4 py-3">Số tiền</th>
+                  <th className="px-4 py-3">Trạng thái</th>
+                  <th className="px-4 py-3 text-right">Hành động</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {invoices.length === 0 ? (
+                  <tr><td colSpan={5} className="py-4 text-center text-slate-400">Không có hoá đơn nào</td></tr>
+                ) : invoices.map(inv => (
+                  <tr key={inv.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-medium text-slate-900">#{inv.id}</td>
+                    <td className="px-4 py-3">{inv.patient?.fullName || inv.appointment?.patient?.fullName || '---'}</td>
+                    <td className="px-4 py-3 font-bold text-sky-600">{inv.amount.toLocaleString('vi-VN')}đ</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-black tracking-wide ${
+                        inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' :
+                        inv.status === 'REFUNDED' ? 'bg-slate-100 text-slate-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {inv.status === 'PAID' ? 'ĐÃ THANH TOÁN' : inv.status === 'REFUNDED' ? 'ĐÃ HOÀN TIỀN' : 'CHỜ HOÀN TIỀN'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {inv.status === 'PENDING_REFUND' && (
+                        <button
+                          onClick={() => handleRefund(inv.id)}
+                          className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600 hover:bg-emerald-100"
+                        >
+                          Duyệt hoàn tiền
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-4">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <CalendarDays className="h-4 w-4" />
             Quản lý Lịch hẹn Gần đây
           </div>
@@ -825,6 +923,56 @@ function Dashboard() {
           </div>
         </section>
 
+        <section className="rounded-[2rem] border border-emerald-100 bg-emerald-50 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">
+            Số dư ví OS Telehealth
+          </div>
+          <div className="mt-4">
+            <h2 className="text-3xl font-black text-emerald-600">
+              {wallet ? wallet.balance.toLocaleString('vi-VN') + ' VNĐ' : 'Đang tải...'}
+            </h2>
+            <p className="text-sm text-emerald-600/80 mt-1">Dùng để thanh toán phí khám trực tuyến</p>
+          </div>
+        </section>
+
+        <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
+            Lịch sử giao dịch
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead>
+                <tr className="border-b border-slate-100 text-xs font-bold uppercase tracking-wider text-slate-400">
+                  <th className="px-4 py-3">Mã hoá đơn</th>
+                  <th className="px-4 py-3">Số tiền</th>
+                  <th className="px-4 py-3">Bác sĩ</th>
+                  <th className="px-4 py-3">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {invoices.length === 0 ? (
+                  <tr><td colSpan={4} className="py-4 text-center text-slate-400">Chưa có giao dịch nào</td></tr>
+                ) : invoices.map(inv => (
+                  <tr key={inv.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-medium text-slate-900">#{inv.id}</td>
+                    <td className="px-4 py-3 text-rose-600 font-bold">-{inv.amount.toLocaleString('vi-VN')}đ</td>
+                    <td className="px-4 py-3">{inv.appointment?.doctor?.fullName || '---'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-black tracking-wide ${
+                        inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' :
+                        inv.status === 'REFUNDED' ? 'bg-slate-100 text-slate-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {inv.status === 'PAID' ? 'ĐÃ THANH TOÁN' : inv.status === 'REFUNDED' ? 'ĐÃ HOÀN TIỀN' : 'CHỜ HOÀN TIỀN'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
@@ -853,7 +1001,7 @@ function Dashboard() {
                 </div>
                 <div className="mt-3 flex items-center gap-2">
                   {(appointment.status === 'CONFIRMED' || appointment.status === 'ACCEPTED') ? (
-                    <button 
+                    <button
                       onClick={() => navigate(`/clinic?doc=${appointment.doctorId ?? 1}&appointmentId=${appointment.id}`)}
                       className="flex-1 rounded-full bg-sky-600 px-4 py-2 text-center text-sm font-bold text-white transition hover:bg-sky-700"
                     >
@@ -874,10 +1022,48 @@ function Dashboard() {
                     </button>
                   )}
                 </div>
-              </div>          
+              </div>
             ))}
           </div>
         </section>
+
+        {/* Section Lịch đã hủy - hiện trạng thái chờ hoàn tiền */}
+        {data.upcomingAppointments.filter(a => a.status === 'CANCELLED').length > 0 && (
+          <section className="rounded-[2rem] border border-rose-100 bg-rose-50/50 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.04)]">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-rose-600">
+              <XCircle className="h-4 w-4" />
+              Lịch đã hủy &amp; Trạng thái hoàn tiền
+            </div>
+            <div className="mt-4 space-y-3">
+              {data.upcomingAppointments.filter(a => a.status === 'CANCELLED').map((appointment) => {
+                const relatedInvoice = invoices.find(inv => inv.appointmentId === appointment.id);
+                return (
+                  <div key={appointment.id} className="rounded-3xl border border-rose-100 bg-white p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-bold text-slate-900">{formatDoctorName(appointment.doctor?.fullName)}</p>
+                        <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate)} · {appointment.startTime} – {appointment.endTime}</p>
+                      </div>
+                      <span className="rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide bg-rose-100 text-rose-700">ĐÃ HỦY</span>
+                    </div>
+                    {relatedInvoice && (
+                      <div className={`mt-3 flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${
+                        relatedInvoice.status === 'REFUNDED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                        'bg-amber-50 text-amber-700 border border-amber-100'
+                      }`}>
+                        {relatedInvoice.status === 'REFUNDED' ? (
+                          <><span>✅</span> Đã hoàn tiền <strong>{relatedInvoice.amount.toLocaleString('vi-VN')}đ</strong> vào ví của bạn.</>
+                        ) : (
+                          <><span>⏳</span> Đang xử lý hoàn tiền <strong>{relatedInvoice.amount.toLocaleString('vi-VN')}đ</strong> — Admin sẽ duyệt sớm.</>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
@@ -1032,6 +1218,10 @@ function Dashboard() {
             <p className="text-slate-600">{data.doctor.email}</p>
             <p className="text-sm font-semibold text-slate-800">{data.profile?.specialty ?? '---'}</p>
             <p className="text-sm text-slate-600">{data.profile?.bio ?? '---'}</p>
+            <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-1.5 text-sm font-bold text-emerald-700 border border-emerald-100">
+              <Banknote className="h-4 w-4" />
+              Tổng doanh thu: {(data.stats.completedAppointments * 100000).toLocaleString('vi-VN')} VNĐ
+            </div>
           </div>
         </section>
 

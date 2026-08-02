@@ -13,6 +13,7 @@ import { VitalSignsModule } from './vital-signs/vital-signs.module';
 import { AiSummariesModule } from './ai-summaries/ai-summaries.module';
 import { MessagesModule } from './messages/messages.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { WalletModule } from './wallet/wallet.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     AiSummariesModule,
     MessagesModule,
     DashboardModule,
+    WalletModule,
    
   ],
   controllers: [AppController],

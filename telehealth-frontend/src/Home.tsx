@@ -127,6 +127,7 @@ const partnerLogos = [
 ];
 
 const PAYMENT_METHODS = [
+  { id: 'WALLET', label: 'Ví ảo OS Telehealth', icon: Wallet, color: 'text-sky-600 bg-sky-50 border-sky-200' },
   { id: 'MOMO', label: 'MoMo', icon: Wallet, color: 'text-pink-600 bg-pink-50 border-pink-200' },
   { id: 'VNPAY', label: 'VNPay', icon: CreditCard, color: 'text-blue-600 bg-blue-50 border-blue-200' },
   { id: 'ZALOPAY', label: 'ZaloPay', icon: Banknote, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
@@ -162,6 +163,7 @@ function Home() {
   const modalRef = useRef<HTMLDivElement>(null);
   const [availableSlots, setAvailableSlots] = useState<{startTime: string, endTime: string}[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
   // SOS Emergency Modal
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
@@ -261,12 +263,25 @@ function Home() {
     return matchName && matchSpec;
   });
 
-  function openBookingModal(doctor: Doctor) {
+  async function openBookingModal(doctor: Doctor) {
     const token = getAuthToken();
     if (!token) {
       navigate('/login');
       return;
     }
+
+    try {
+      const res = await fetch(`${API_URL}/wallet/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWalletBalance(data.data.balance);
+      }
+    } catch (e) {
+      console.error('Lỗi tải ví', e);
+    }
+
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -278,7 +293,7 @@ function Home() {
       startTime: '09:00',
       endTime: '09:30',
       symptoms: '',
-      paymentMethod: 'MOMO',
+      paymentMethod: 'WALLET',
     });
     setBookingStep(1);
     setBookingError('');
@@ -490,9 +505,21 @@ function Home() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                  💡 Phí tư vấn <strong>120.000đ</strong> sẽ được thanh toán qua {PAYMENT_METHODS.find(p => p.id === bookingModal.paymentMethod)?.label}
-                </div>
+                {bookingModal.paymentMethod === 'WALLET' ? (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    💡 Phí tư vấn <strong>100.000đ</strong> sẽ được trừ vào Ví ảo OS Telehealth của bạn.
+                    {walletBalance !== null && (
+                      <div className="mt-2 text-xs">
+                        Số dư ví hiện tại: <strong>{walletBalance.toLocaleString('vi-VN')} VNĐ</strong>
+                        {walletBalance < 100000 && <span className="text-rose-600 block mt-1">⚠️ Số dư không đủ để thanh toán. Vui lòng chọn phương thức khác hoặc nạp thêm.</span>}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-700">
+                    💡 Phí tư vấn <strong>100.000đ</strong> sẽ được thanh toán qua <strong>{PAYMENT_METHODS.find(p => p.id === bookingModal.paymentMethod)?.label}</strong>.
+                  </div>
+                )}
 
                 {bookingError && (
                   <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">{bookingError}</p>
@@ -508,7 +535,7 @@ function Home() {
                   <button
                     id="booking-confirm-btn"
                     onClick={submitBooking}
-                    disabled={bookingLoading}
+                    disabled={bookingLoading || (bookingModal.paymentMethod === 'WALLET' && walletBalance !== null && walletBalance < 100000)}
                     className="flex-[2] rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 py-3 text-sm font-black text-white shadow-lg shadow-sky-600/30 transition hover:from-sky-700 hover:to-cyan-600 active:scale-95 disabled:opacity-60"
                   >
                     {bookingLoading ? (

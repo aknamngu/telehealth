@@ -25,6 +25,11 @@ export class UsersService {
         password: createUserDto.password, // Tạm thời lưu text thô để test mạch chạy, sau này mình sẽ hash sau nha
         fullName: createUserDto.fullName,
         role: createUserDto.role || 'PATIENT',
+        wallet: {
+          create: {
+            balance: 1000000,
+          }
+        }
       },
     });
 

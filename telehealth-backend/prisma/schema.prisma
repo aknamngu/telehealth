@@ -25,6 +25,8 @@ model User {
   doctorSchedules     DoctorSchedule[]
   patientReviews      Review[]         @relation("PatientReviews")
   doctorReviews       Review[]         @relation("DoctorReviews")
+  wallet              Wallet?
+  invoices            Invoice[]
 }
 
 // 1.5. Bảng Lịch làm việc của Bác sĩ
@@ -73,6 +75,7 @@ model Appointment {
   vitalSigns      VitalSignsAI[]
   aiSummaries     AiConsultationSummary[]
   review          Review?
+  invoice         Invoice?
 }
 
 // 4. Bảng Đơn thuốc điện tử
@@ -169,3 +172,28 @@ model Review {
   doctor        User        @relation("DoctorReviews", fields: [doctorId], references: [id])
   appointment   Appointment @relation(fields: [appointmentId], references: [id])
 }
+
+// 11. Bảng Ví Ảo (Mock Wallet)
+model Wallet {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  balance   Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+// 12. Bảng Hoá đơn giao dịch (Invoice)
+model Invoice {
+  id            Int         @id @default(autoincrement())
+  appointmentId Int         @unique
+  patientId     Int
+  amount        Float
+  status        String      // 'PAID', 'PENDING_REFUND', 'REFUNDED'
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  patient       User        @relation(fields: [patientId], references: [id])
+}
