@@ -36,6 +36,8 @@ interface AppointmentItem {
   patient?: { id?: number; fullName: string; email?: string };
   doctor?: { id?: number; fullName: string; email?: string };
   prescriptions?: PrescriptionItem[];
+  review?: { rating: number; comment?: string } | null;
+  aiSummaries?: { aiSummary?: string; suggestedMedicines?: string }[];
 }
 
 interface PrescriptionItem {
@@ -87,6 +89,7 @@ interface AdminPayload {
   recentPrescriptions: PrescriptionItem[];
   recentVitals: VitalItem[];
   topDoctors: Array<{ id: number; name: string; specialty: string; rating: number; patientCount: number; yearsExp: number; isOnline: boolean }>;
+  allUsers: Array<{ id: number; email: string; fullName: string; role: string; isActive: boolean; createdAt: string }>;
 }
 
 interface PatientPayload {
@@ -162,7 +165,20 @@ function Dashboard() {
   const [error, setError] = useState('');
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [newApptNotif, setNewApptNotif] = useState<NewAppointmentNotif | null>(null);
-  const [selectedPrescription, setSelectedPrescription] = useState<{ appointmentId: number, date: string, doctorName: string, diagnosis: string, medicines: string } | null>(null);
+  const [selectedPrescription, setSelectedPrescription] = useState<{
+    appointmentId: number;
+    date: string;
+    doctorName: string;
+    diagnosis: string;
+    medicines: string;
+    aiSummary?: string;
+    suggestedMedicines?: string;
+  } | null>(null);
+
+  const [ratingModal, setRatingModal] = useState<{ appointmentId: number, doctorName: string } | null>(null);
+  const [ratingVal, setRatingVal] = useState(5);
+  const [ratingComment, setRatingComment] = useState('');
+  const [ratingLoading, setRatingLoading] = useState(false);
 
   // States cho Quản lý Lịch làm việc Bác sĩ
   const [selectedScheduleDate, setSelectedScheduleDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -352,6 +368,61 @@ function Dashboard() {
     finally { setCancellingId(null); }
   }
 
+  // Quản lý trạng thái User (Khóa / Mở khóa)
+  async function toggleUserStatus(userId: number, currentStatus: boolean) {
+    if (!window.confirm(`Bạn có chắc muốn ${currentStatus ? 'KHOÁ' : 'MỞ KHOÁ'} tài khoản này?`)) return;
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/users/${userId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ isActive: !currentStatus }),
+      });
+      if (res.ok) {
+        alert(`Đã ${currentStatus ? 'khoá' : 'mở khoá'} thành công!`);
+        loadDashboard();
+      } else {
+        const data = await res.json();
+        alert(data.message || 'Có lỗi xảy ra');
+      }
+    } catch (e) {
+      alert('Không thể kết nối đến máy chủ!');
+    }
+  }
+
+  async function submitRating(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ratingModal) return;
+    
+    setRatingLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/appointments/${ratingModal.appointmentId}/review`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+        body: JSON.stringify({
+          rating: ratingVal,
+          comment: ratingComment
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Lỗi khi gửi đánh giá');
+      
+      alert('Cảm ơn bạn đã gửi đánh giá!');
+      setRatingModal(null);
+      setRatingVal(5);
+      setRatingComment('');
+      loadDashboard();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Có lỗi xảy ra');
+    } finally {
+      setRatingLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.12),_transparent_26%),linear-gradient(180deg,_#f8fafc_0%,_#eef6ff_52%,_#f8fafc_100%)] text-slate-900">
 
@@ -477,12 +548,23 @@ function Dashboard() {
 
               <div>
                 <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                  Đơn thuốc & Lời khuyên
+                  Đơn thuốc & Liều dùng
                 </label>
-                <div className="whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-800">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-800 whitespace-pre-wrap">
                   {selectedPrescription.medicines}
                 </div>
               </div>
+
+              {selectedPrescription.aiSummary && (
+                <div className="mt-4">
+                  <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-sky-600">
+                    <Sparkles className="mr-1.5 inline h-3.5 w-3.5" /> Tóm tắt Bệnh án (Bởi AI)
+                  </label>
+                  <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm font-medium text-sky-900 whitespace-pre-wrap">
+                    {selectedPrescription.aiSummary}
+                  </div>
+                </div>
+              )}
 
               <div className="pt-4">
                 <button
@@ -493,6 +575,55 @@ function Dashboard() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Rating */}
+      {ratingModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)] rounded-[2rem] bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-black tracking-tight text-slate-900">Đánh giá Bác sĩ</h3>
+                <p className="text-xs font-medium text-slate-500">Bác sĩ {ratingModal.doctorName}</p>
+              </div>
+              <button onClick={() => setRatingModal(null)} className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <form onSubmit={submitRating} className="space-y-4">
+              <div className="flex justify-center gap-2 py-4">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setRatingVal(star)}
+                    className={`text-3xl transition ${star <= ratingVal ? 'text-amber-400' : 'text-slate-200 hover:text-slate-300'}`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+              <div>
+                <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Lời nhận xét</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={ratingComment}
+                  onChange={e => setRatingComment(e.target.value)}
+                  placeholder="Bác sĩ tư vấn nhiệt tình..."
+                  className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm focus:border-sky-500 focus:outline-none"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={ratingLoading}
+                className="w-full rounded-full bg-slate-900 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {ratingLoading ? 'Đang gửi...' : 'Gửi Đánh Giá'}
+              </button>
+            </form>
           </div>
         </div>
       )}
@@ -555,27 +686,102 @@ function Dashboard() {
           </div>
         </section>
 
-        <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
+        <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-4">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
+            <Users className="h-4 w-4" />
+            Quản lý Tài khoản (Users)
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Họ tên</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">Vai trò</th>
+                  <th className="px-4 py-3">Trạng thái</th>
+                  <th className="px-4 py-3 text-right">Hành động</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.allUsers?.map(user => (
+                  <tr key={user.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-semibold text-slate-900">{user.fullName}</td>
+                    <td className="px-4 py-3">{user.email}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-black tracking-wide ${user.role === 'DOCTOR' ? 'bg-sky-100 text-sky-700' : user.role === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {user.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {user.isActive ? (
+                        <span className="text-emerald-600 font-bold">Hoạt động</span>
+                      ) : (
+                        <span className="text-rose-600 font-bold">Bị khoá</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {user.role !== 'ADMIN' && (
+                        <button
+                          onClick={() => toggleUserStatus(user.id, user.isActive)}
+                          className={`rounded border px-3 py-1 text-xs font-semibold ${user.isActive ? 'border-rose-200 text-rose-600 hover:bg-rose-50' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'}`}
+                        >
+                          {user.isActive ? 'Khoá' : 'Mở khoá'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-4">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <CalendarDays className="h-4 w-4" />
-            Recent appointments
+            Quản lý Lịch hẹn Gần đây
           </div>
-          <div className="mt-4 space-y-3">
-            {data.recentAppointments.map((appointment) => (
-              <div key={appointment.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-bold text-slate-900">{appointment.patient?.fullName ?? '---'}</p>
-                    <p className="text-sm text-slate-600">{formatDoctorName(appointment.doctor?.fullName)}</p>
-                  </div>
-                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600">{appointment.status}</span>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-600">
-                  <span>{formatDate(appointment.appointmentDate)}</span>
-                  <span>{appointment.startTime} - {appointment.endTime}</span>
-                </div>
-              </div>
-            ))}
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Bệnh nhân</th>
+                  <th className="px-4 py-3">Bác sĩ</th>
+                  <th className="px-4 py-3">Thời gian</th>
+                  <th className="px-4 py-3">Trạng thái</th>
+                  <th className="px-4 py-3 text-right">Hành động</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.recentAppointments.map(appt => (
+                  <tr key={appt.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-medium text-slate-900">{appt.patient?.fullName}</td>
+                    <td className="px-4 py-3">{appt.doctor?.fullName}</td>
+                    <td className="px-4 py-3">{formatDate(appt.appointmentDate)} {appt.startTime}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-black tracking-wide ${
+                        appt.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
+                        appt.status === 'CANCELLED' ? 'bg-rose-100 text-rose-700' :
+                        appt.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
+                        'bg-sky-100 text-sky-700'
+                      }`}>
+                        {appt.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {(appt.status === 'PENDING' || appt.status === 'CONFIRMED' || appt.status === 'ACCEPTED') && (
+                        <button
+                          onClick={() => updateAppointmentStatus(appt.id, 'CANCELLED')}
+                          className="rounded border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                        >
+                          Huỷ lịch
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
 
@@ -691,20 +897,35 @@ function Dashboard() {
                   <span className="rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide bg-slate-200 text-slate-700">ĐÃ HOÀN TẤT</span>
                 </div>
                 {appointment.prescriptions && appointment.prescriptions.length > 0 && (
-                  <div className="mt-3">
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
                     <button
                       onClick={() => setSelectedPrescription({
                         appointmentId: appointment.id,
                         date: formatDate(appointment.appointmentDate),
                         doctorName: formatDoctorName(appointment.doctor?.fullName),
                         diagnosis: appointment.prescriptions![0].diagnosis,
-                        medicines: appointment.prescriptions![0].medicines
+                        medicines: appointment.prescriptions![0].medicines,
+                        aiSummary: appointment.aiSummaries?.[0]?.aiSummary,
+                        suggestedMedicines: appointment.aiSummaries?.[0]?.suggestedMedicines
                       })}
                       className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-bold text-white transition hover:bg-slate-800"
                     >
                       <FileText className="h-3 w-3" />
                       Xem Hồ sơ & Đơn thuốc
                     </button>
+                    {!appointment.review && (
+                      <button
+                        onClick={() => setRatingModal({ appointmentId: appointment.id, doctorName: formatDoctorName(appointment.doctor?.fullName) })}
+                        className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-700 transition hover:bg-amber-100"
+                      >
+                        Đánh giá Bác sĩ
+                      </button>
+                    )}
+                    {appointment.review && (
+                      <div className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 border border-emerald-100">
+                        Đã đánh giá: {appointment.review.rating} ★
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -202,14 +202,14 @@ function Home() {
       .then((response) => response.json())
       .then((payload: ApiWrapper<ApiDoctorUser[]> | ApiDoctorUser[]) => {
         const records = Array.isArray(payload) ? payload : payload.data;
-        const normalizedDoctors = records.map((doctor) => ({
+        const normalizedDoctors = records.map((doctor: any) => ({
           id: doctor.id,
           name: doctor.fullName,
           specialty: doctor.doctorProfile?.specialty ?? 'Đa khoa',
           bio: doctor.doctorProfile?.bio ?? '',
           yearsExp: doctor.doctorProfile?.experienceYears ?? 0,
-          rating: 5,
-          patientCount: 0,
+          rating: doctor.rating ?? 5.0,
+          patientCount: doctor.patientCount ?? 0,
           isOnline: false,
         }));
         setDoctors(normalizedDoctors);

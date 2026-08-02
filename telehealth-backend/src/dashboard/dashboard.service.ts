@@ -72,7 +72,7 @@ export class DashboardService {
       this.prisma.vitalSignsAI.count(),
     ]);
 
-    const [statusStats, recentAppointments, recentMessages, recentPrescriptions, recentVitals, topDoctors] = await Promise.all([
+    const [statusStats, recentAppointments, recentMessages, recentPrescriptions, recentVitals, topDoctors, allUsers] = await Promise.all([
       this.prisma.appointment.groupBy({
         by: ['status'],
         _count: { status: true },
@@ -121,6 +121,10 @@ export class DashboardService {
         orderBy: [{ featured: 'desc' }, { sortOrder: 'asc' }],
         take: 4,
       }),
+      this.prisma.user.findMany({
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, email: true, fullName: true, role: true, isActive: true, createdAt: true },
+      }),
     ]);
 
     return {
@@ -141,6 +145,7 @@ export class DashboardService {
         recentPrescriptions,
         recentVitals,
         topDoctors,
+        allUsers,
       },
     };
   }

@@ -21,6 +21,7 @@ interface ActiveCall {
   cors: {
     origin: '*',
   },
+  maxHttpBufferSize: 1e7, // Cho phép 10MB data (để gửi base64 hình ảnh)
 })
 export class MessagesGateway {
   @WebSocketServer()

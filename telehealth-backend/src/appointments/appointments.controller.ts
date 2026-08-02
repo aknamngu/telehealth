@@ -62,4 +62,17 @@ export class AppointmentsController {
   getPatientHistory(@Param('patientId') patientId: string, @CurrentUser() user: { sub: number; role: string }) {
     return this.appointmentsService.getPatientMedicalHistory(+patientId, user);
   }
+
+  // 6. Cổng đánh giá bác sĩ sau khi khám: POST http://localhost:3000/appointments/:id/review
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('PATIENT')
+  @Post(':id/review')
+  submitReview(
+    @Param('id') id: string,
+    @Body('rating') rating: number,
+    @Body('comment') comment: string,
+    @CurrentUser() user: { sub: number; role: string }
+  ) {
+    return this.appointmentsService.submitReview(+id, rating, comment, user);
+  }
 }

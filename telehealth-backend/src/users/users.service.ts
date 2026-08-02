@@ -47,6 +47,7 @@ export class UsersService {
         email: true,
         fullName: true,
         role: true,
+        isActive: true,
         createdAt: true,
       },
     });
@@ -63,6 +64,17 @@ export class UsersService {
 
   update(id: number, updateUserDto: UpdateUserDto) {
     return `This action updates a #${id} user`;
+  }
+
+  async updateStatus(id: number, isActive: boolean) {
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: { isActive },
+    });
+    return {
+      message: `Đã ${isActive ? 'mở khóa' : 'khóa'} tài khoản thành công!`,
+      data: user
+    };
   }
 
   remove(id: number) {

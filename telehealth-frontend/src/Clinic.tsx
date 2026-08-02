@@ -8,6 +8,7 @@ import {
   CalendarDays,
   Clock,
   Heart,
+  Image,
   MicOff,
   PhoneOff,
   Send,
@@ -25,9 +26,11 @@ interface Doctor {
 }
 
 interface Message {
+  id?: number;
   sender: 'patient' | 'doctor';
   text: string;
   time: string;
+  type?: 'TEXT' | 'IMAGE' | 'FILE';
 }
 
 interface ApiDoctorProfile {
@@ -177,6 +180,30 @@ function Clinic() {
   // ─── 4. Scroll chat ───────────────────────────────────────────────────────
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
+  // Load chat history
+  useEffect(() => {
+    if (!appointmentId) return;
+    const token = getAuthToken();
+    if (!token) return;
+    fetch(`${API_URL}/messages/appointment/${appointmentId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.data && Array.isArray(data.data)) {
+          const loaded = data.data.map((m: any) => ({
+            id: m.id,
+            sender: m.sender?.role === 'DOCTOR' ? 'doctor' : 'patient',
+            text: m.content,
+            type: m.messageType,
+            time: new Date(m.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+          }));
+          setMessages(loaded);
+        }
+      })
+      .catch(err => console.error("Error loading messages:", err));
+  }, [appointmentId]);
+
   // ─── 5. Tạo RTCPeerConnection ──────────────────────────────────────────────
   useEffect(() => {
     const pc = new RTCPeerConnection({
@@ -307,6 +334,19 @@ function Clinic() {
       }
     };
 
+    const handleNewMessage = (msg: any) => {
+      setMessages((prev) => {
+        if (prev.some(m => m.id === msg.id)) return prev; // Avoid duplicates
+        return [...prev, {
+          id: msg.id,
+          sender: msg.sender?.role === 'DOCTOR' ? 'doctor' : 'patient',
+          text: msg.content,
+          type: msg.messageType,
+          time: new Date(msg.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+        }];
+      });
+    };
+
     socket.on('call:accept', handleCallAccept);
     socket.on('offer', handleOffer);
     socket.on('answer', handleAnswer);
@@ -314,6 +354,7 @@ function Clinic() {
     socket.on('call:busy', handleCallBusy);
     socket.on('call:decline', handleCallDecline);
     socket.on('call:end', handleCallEnd);
+    socket.on('newMessage', handleNewMessage);
 
     if (authUser?.role === 'DOCTOR' && autoAccept) {
       console.log('🩺 Doctor autoAccept: emitting call:accept');
@@ -556,11 +597,49 @@ function Clinic() {
   const handleSend = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
-    setMessages((p) => [
-      ...p,
-      { sender: authUser?.role === 'DOCTOR' ? 'doctor' : 'patient', text: chatInput.trim(), time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) },
-    ]);
+    
+    if (authUser && appointmentId) {
+      socket.emit('sendMessage', {
+        appointmentId: Number(appointmentId),
+        senderId: authUser.id,
+        senderRole: authUser.role,
+        messageType: 'TEXT',
+        content: chatInput.trim()
+      });
+    } else {
+      // Fallback local
+      setMessages((p) => [
+        ...p,
+        { sender: authUser?.role === 'DOCTOR' ? 'doctor' : 'patient', text: chatInput.trim(), time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) },
+      ]);
+    }
     setChatInput('');
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (file.size > 2 * 1024 * 1024) {
+      alert("File ảnh quá lớn, vui lòng chọn file < 2MB");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const base64 = ev.target?.result as string;
+      if (authUser && appointmentId) {
+        socket.emit('sendMessage', {
+          appointmentId: Number(appointmentId),
+          senderId: authUser.id,
+          senderRole: authUser.role,
+          messageType: 'IMAGE',
+          content: base64
+        });
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const isConnected = callStatus === 'connected';
@@ -980,20 +1059,40 @@ function Clinic() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {messages.map((msg, i) => (
-                    <div key={i} className={`flex flex-col gap-1 ${msg.sender === 'patient' ? 'items-end' : 'items-start'}`}>
-                      <div className={`max-w-[85%] rounded-3xl px-4 py-3 text-sm font-medium shadow-sm ${msg.sender === 'patient' ? 'rounded-tr-md bg-gradient-to-r from-sky-600 to-cyan-600 text-white' : 'rounded-tl-md bg-slate-100 text-slate-800'}`}>
-                        {msg.text}
+                  {messages.map((msg, i) => {
+                    const isMe = msg.sender === (authUser?.role === 'DOCTOR' ? 'doctor' : 'patient');
+                    return (
+                      <div key={i} className={`flex gap-2 mb-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                        {!isMe && (
+                          <div className="h-8 w-8 rounded-full bg-slate-200 grid place-items-center flex-shrink-0 text-[10px] font-bold text-slate-500">
+                             {msg.sender === 'doctor' ? 'BS' : 'BN'}
+                          </div>
+                        )}
+                        <div className={`flex flex-col gap-1 max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
+                          {msg.type === 'IMAGE' ? (
+                            <div className={`overflow-hidden rounded-2xl shadow-sm border border-slate-100 ${isMe ? 'bg-sky-50' : 'bg-slate-50'}`}>
+                              <img src={msg.text} alt="Shared Medical Document" className="w-full h-auto object-contain cursor-zoom-in" onClick={() => window.open(msg.text, '_blank')} />
+                            </div>
+                          ) : (
+                            <div className={`rounded-3xl px-4 py-3 text-sm font-medium shadow-sm ${isMe ? 'rounded-tr-md bg-gradient-to-r from-sky-600 to-cyan-600 text-white' : 'rounded-tl-md bg-slate-100 text-slate-800'}`}>
+                              {msg.text}
+                            </div>
+                          )}
+                          <span className="mx-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">{msg.time}</span>
+                        </div>
                       </div>
-                      <span className="mx-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">{msg.time}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                   <div ref={chatEndRef} />
                 </div>
               )}
             </div>
             <form onSubmit={handleSend} className="border-t border-slate-100 bg-white p-4">
               <div className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-slate-50 px-3 py-2.5 focus-within:border-sky-300 focus-within:bg-white">
+                <label className="cursor-pointer grid h-9 w-9 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-200 hover:text-slate-700">
+                  <Image className="h-4 w-4" />
+                  <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+                </label>
                 <input
                   type="text"
                   value={chatInput}

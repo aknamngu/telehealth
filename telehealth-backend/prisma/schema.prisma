@@ -14,6 +14,7 @@ model User {
   password            String
   fullName            String
   role                String         // 'PATIENT' hoặc 'DOCTOR'
+  isActive            Boolean        @default(true)
   createdAt           DateTime       @default(now())
   
   // Mối quan hệ
@@ -22,6 +23,8 @@ model User {
   doctorAppointments  Appointment[]    @relation("DoctorAppointments")
   messages            MessageLog[]
   doctorSchedules     DoctorSchedule[]
+  patientReviews      Review[]         @relation("PatientReviews")
+  doctorReviews       Review[]         @relation("DoctorReviews")
 }
 
 // 1.5. Bảng Lịch làm việc của Bác sĩ
@@ -69,6 +72,7 @@ model Appointment {
   messageLogs     MessageLog[]
   vitalSigns      VitalSignsAI[]
   aiSummaries     AiConsultationSummary[]
+  review          Review?
 }
 
 // 4. Bảng Đơn thuốc điện tử
@@ -101,7 +105,7 @@ model MessageLog {
   appointmentId Int
   senderId      Int
   messageType   String      // 'TEXT', 'IMAGE', 'FILE'
-  content       String      @db.Text
+  content       String      @db.LongText
   createdAt     DateTime    @default(now())
 
   appointment   Appointment @relation(fields: [appointmentId], references: [id])
@@ -149,4 +153,19 @@ model Doctor {
   updatedAt    DateTime @updatedAt
 
   @@map("doctors")
+}
+
+// 10. Bảng Đánh giá Bác sĩ
+model Review {
+  id            Int         @id @default(autoincrement())
+  patientId     Int
+  doctorId      Int
+  appointmentId Int         @unique
+  rating        Int         // 1 - 5
+  comment       String?     @db.Text
+  createdAt     DateTime    @default(now())
+
+  patient       User        @relation("PatientReviews", fields: [patientId], references: [id])
+  doctor        User        @relation("DoctorReviews", fields: [doctorId], references: [id])
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
 }

@@ -145,6 +145,8 @@ export class AppointmentsService {
           select: { fullName: true }
         },
         prescriptions: true,
+        review: true,
+        aiSummaries: true,
       }
     });
 
@@ -246,6 +248,53 @@ export class AppointmentsService {
     return {
       message: 'Lưu chẩn đoán, đơn thuốc và hoàn tất ca khám thành công!',
       data: result,
+    };
+  }
+
+  // Cổng đánh giá bác sĩ
+  async submitReview(id: number, rating: number, comment: string, user: { sub: number; role: string }) {
+    if (user.role !== 'PATIENT') {
+      throw new ForbiddenException('Chỉ bệnh nhân mới có quyền đánh giá!');
+    }
+
+    const appointment = await this.prisma.appointment.findUnique({ where: { id } });
+    if (!appointment) {
+      throw new NotFoundException('Không tìm thấy lịch hẹn này!');
+    }
+
+    if (appointment.patientId !== user.sub) {
+      throw new ForbiddenException('Bạn chỉ có thể đánh giá ca khám của chính mình!');
+    }
+
+    if (appointment.status !== 'COMPLETED') {
+      throw new BadRequestException('Chỉ có thể đánh giá sau khi ca khám đã hoàn tất!');
+    }
+
+    const existingReview = await this.prisma.review.findUnique({
+      where: { appointmentId: id }
+    });
+
+    if (existingReview) {
+      throw new BadRequestException('Bạn đã đánh giá ca khám này rồi!');
+    }
+
+    if (rating < 1 || rating > 5) {
+      throw new BadRequestException('Số sao đánh giá phải từ 1 đến 5!');
+    }
+
+    const review = await this.prisma.review.create({
+      data: {
+        appointmentId: id,
+        patientId: user.sub,
+        doctorId: appointment.doctorId,
+        rating,
+        comment
+      }
+    });
+
+    return {
+      message: 'Đánh giá thành công!',
+      data: review
     };
   }
 

@@ -45,7 +45,14 @@ export class MessagesService {
 
     return {
       message: "Lưu lịch sử tin nhắn thành công!",
-      data: messageLog,
+      data: {
+        ...messageLog,
+        sender: {
+          id: sender.id,
+          fullName: sender.fullName,
+          role: sender.role,
+        }
+      },
     };
   }
 
