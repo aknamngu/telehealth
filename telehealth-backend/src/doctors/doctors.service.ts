@@ -42,12 +42,34 @@ export class DoctorsService {
         email: true,
         fullName: true,
         doctorProfile: true, // Nối bảng bốc dữ liệu quan hệ cực mượt bằng Prisma
+        doctorReviews: {
+          select: { rating: true }
+        },
+        doctorAppointments: {
+          select: { id: true, patientId: true }
+        }
       },
+    });
+
+    // Tính toán average rating và patient count (unique patientIds)
+    const doctorsWithStats = doctors.map(doc => {
+      let averageRating = 5.0;
+      if (doc.doctorReviews.length > 0) {
+        const total = doc.doctorReviews.reduce((sum, rev) => sum + rev.rating, 0);
+        averageRating = total / doc.doctorReviews.length;
+      }
+      const uniquePatients = new Set(doc.doctorAppointments.map(a => a.patientId)).size;
+
+      return {
+        ...doc,
+        rating: averageRating,
+        patientCount: uniquePatients
+      };
     });
 
     return {
       message: "Lấy danh sách Bác sĩ thành công!",
-      data: doctors,
+      data: doctorsWithStats,
     };
   }
 
