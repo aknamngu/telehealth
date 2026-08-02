@@ -129,7 +129,7 @@ const partnerLogos = [
 const PAYMENT_METHODS = [
   { id: 'MOMO', label: 'MoMo', icon: Wallet, color: 'text-pink-600 bg-pink-50 border-pink-200' },
   { id: 'VNPAY', label: 'VNPay', icon: CreditCard, color: 'text-blue-600 bg-blue-50 border-blue-200' },
-  { id: 'CASH', label: 'Tiền mặt', icon: Banknote, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
+  { id: 'ZALOPAY', label: 'ZaloPay', icon: Banknote, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
 ];
 
 const TIME_SLOTS = [
@@ -841,7 +841,7 @@ function Home() {
 
               <div className="rounded-[2rem] border border-slate-100 bg-gradient-to-br from-sky-500 to-emerald-500 p-6 text-white shadow-[0_20px_60px_rgba(14,165,233,0.2)]">
                 <p className="text-sm font-bold uppercase tracking-[0.24em] text-white/80">Thanh toán</p>
-                <p className="mt-4 text-2xl font-black">MoMo · VNPay · Tiền mặt</p>
+                <p className="mt-4 text-2xl font-black">MoMo · VNPay · ZaloPay</p>
                 <p className="mt-3 text-sm leading-6 text-white/85">
                   Chọn phương thức thanh toán phù hợp ngay trong bước đặt lịch.
                 </p>

@@ -8,6 +8,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { MessagesService } from './messages.service';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { PrismaService } from '../prisma.service';
 
 interface ActiveCall {
   doctorId: number;
@@ -27,8 +28,13 @@ export class MessagesGateway {
 
   // Quản lý trạng thái các cuộc gọi đang diễn ra để chặn trùng / báo bận
   private activeCalls = new Map<string, ActiveCall>();
+  // Theo dõi socket nào đang ở appointment nào (để cleanup khi disconnect)
+  private socketToAppointment = new Map<string, string>();
 
-  constructor(private readonly messagesService: MessagesService) {}
+  constructor(
+    private readonly messagesService: MessagesService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   handleConnection(client: Socket) {
     console.log(`🔌 Thiết bị vừa kết nối Socket: ${client.id}`);
@@ -36,6 +42,13 @@ export class MessagesGateway {
 
   handleDisconnect(client: Socket) {
     console.log(`❌ Thiết bị đã ngắt kết nối Socket: ${client.id}`);
+    // Dọn dẹp activeCall nếu socket này đang trong cuộc gọi
+    const appointmentId = this.socketToAppointment.get(client.id);
+    if (appointmentId && this.activeCalls.has(appointmentId)) {
+      console.log(`🧹 Dọn dẹp activeCall cho appointment ${appointmentId} do socket ${client.id} ngắt kết nối`);
+      this.activeCalls.delete(appointmentId);
+      this.socketToAppointment.delete(client.id);
+    }
   }
 
   @SubscribeMessage('sendMessage')
@@ -133,6 +146,8 @@ export class MessagesGateway {
       appointmentId: payload.appointmentId,
       patientName: payload.fromName ?? 'Bệnh nhân',
     });
+    // Ghi nhận socket này đang trong appointment
+    this.socketToAppointment.set(client.id, payload.appointmentId);
 
     client.to(`room_${payload.appointmentId}`).emit('call:accept');
   }
@@ -146,13 +161,28 @@ export class MessagesGateway {
   }
 
   @SubscribeMessage('call:end')
-  handleCallEnd(
+  async handleCallEnd(
     @MessageBody() payload: { appointmentId: string },
     @ConnectedSocket() client: Socket,
   ) {
     console.log(`📴 call:end for appointment ${payload.appointmentId}`);
     this.activeCalls.delete(payload.appointmentId);
+    this.socketToAppointment.delete(client.id);
     client.to(`room_${payload.appointmentId}`).emit('call:end');
+
+    // Tự động đánh dấu appointment là COMPLETED khi cuộc gọi kết thúc
+    const numericId = parseInt(payload.appointmentId, 10);
+    if (!isNaN(numericId)) {
+      try {
+        await this.prisma.appointment.update({
+          where: { id: numericId },
+          data: { status: 'COMPLETED' },
+        });
+        console.log(`✅ Appointment #${numericId} đã tự động chuyển sang COMPLETED sau cuộc gọi`);
+      } catch (err) {
+        console.error(`⚠️ Không thể auto-complete appointment #${numericId}:`, err);
+      }
+    }
   }
 
   // 🚨 HỆ THỐNG CẤP CỨU KHẨN CẤP SOS (EMERGENCY OVERRIDE)

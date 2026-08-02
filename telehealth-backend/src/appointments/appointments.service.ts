@@ -55,7 +55,7 @@ export class AppointmentsService {
         },
         startTime,
         status: {
-          notIn: ['CANCELLED'],
+          in: ['PENDING', 'CONFIRMED', 'ACCEPTED'],
         },
       },
     });

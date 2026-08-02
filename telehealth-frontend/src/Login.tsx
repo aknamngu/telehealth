@@ -96,20 +96,35 @@ function Login() {
               <ShieldCheck className="h-5 w-5" />
               Tài khoản mẫu để test nhanh
             </div>
-            <div className="mt-4 grid gap-3 text-sm text-slate-200 sm:grid-cols-3">
+            <div className="mt-4 grid gap-3 text-sm text-slate-200 sm:grid-cols-2 lg:grid-cols-3">
               <div className="rounded-2xl bg-black/20 p-3">
                 <p className="font-semibold text-white">Admin</p>
                 <p>admin@telehealth.vn</p>
                 <p>admin123</p>
               </div>
               <div className="rounded-2xl bg-black/20 p-3">
-                <p className="font-semibold text-white">Doctor</p>
+                <p className="font-semibold text-white">Patient</p>
+                <p>patient.an@example.com</p>
+                <p>password123</p>
+              </div>
+              <div className="rounded-2xl bg-black/20 p-3">
+                <p className="font-semibold text-white">Doctor 1 (Tim mạch)</p>
                 <p>son.dang@example.com</p>
                 <p>password123</p>
               </div>
               <div className="rounded-2xl bg-black/20 p-3">
-                <p className="font-semibold text-white">Patient</p>
-                <p>patient.an@example.com</p>
+                <p className="font-semibold text-white">Doctor 2 (Nội tổng quát)</p>
+                <p>phuong.tran@example.com</p>
+                <p>password123</p>
+              </div>
+              <div className="rounded-2xl bg-black/20 p-3">
+                <p className="font-semibold text-white">Doctor 3 (Nhi khoa)</p>
+                <p>hien.nguyen@example.com</p>
+                <p>password123</p>
+              </div>
+              <div className="rounded-2xl bg-black/20 p-3">
+                <p className="font-semibold text-white">Doctor 4 (Da liễu)</p>
+                <p>quang.le@example.com</p>
                 <p>password123</p>
               </div>
             </div>

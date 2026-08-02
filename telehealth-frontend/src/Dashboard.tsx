@@ -516,14 +516,14 @@ function Dashboard() {
               <CalendarDays className="h-4 w-4" />
               Lịch hẹn sắp tới
             </div>
-            {data.upcomingAppointments.length > 0 && (
-              <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-black text-sky-700">{data.upcomingAppointments.length}</span>
+            {data.upcomingAppointments.filter(a => a.status !== 'CANCELLED').length > 0 && (
+              <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-black text-sky-700">{data.upcomingAppointments.filter(a => a.status !== 'CANCELLED').length}</span>
             )}
           </div>
           <div className="mt-4 space-y-3">
-            {data.upcomingAppointments.length === 0 ? (
+            {data.upcomingAppointments.filter(a => a.status !== 'CANCELLED').length === 0 ? (
               <p className="text-center py-6 text-sm text-slate-400">Chưa có lịch hẹn sắp tới</p>
-            ) : data.upcomingAppointments.map((appointment) => (
+            ) : data.upcomingAppointments.filter(a => a.status !== 'CANCELLED').map((appointment) => (
               <div key={appointment.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -533,12 +533,11 @@ function Dashboard() {
                   <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${
                     appointment.status === 'CONFIRMED' || appointment.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' :
                     appointment.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
-                    appointment.status === 'CANCELLED' ? 'bg-rose-100 text-rose-700' :
                     'bg-slate-100 text-slate-600'
-                  }`}>{appointment.status === 'CANCELLED' ? 'ĐÃ HỦY' : appointment.status === 'PENDING' ? 'CHỜ DUYỆT' : appointment.status === 'CONFIRMED' ? 'ĐÃ XÁC NHẬN' : appointment.status}</span>
+                  }`}>{appointment.status === 'PENDING' ? 'CHỜ DUYỆT' : appointment.status === 'CONFIRMED' ? 'ĐÃ XÁC NHẬN' : appointment.status}</span>
                 </div>
                 <div className="mt-3 flex items-center gap-2">
-                  {appointment.status !== 'CANCELLED' ? (
+                  {(appointment.status === 'CONFIRMED' || appointment.status === 'ACCEPTED') ? (
                     <button 
                       onClick={() => navigate(`/clinic?doc=${appointment.doctorId ?? 1}&appointmentId=${appointment.id}`)}
                       className="flex-1 rounded-full bg-sky-600 px-4 py-2 text-center text-sm font-bold text-white transition hover:bg-sky-700"
@@ -546,8 +545,8 @@ function Dashboard() {
                       Vào phòng khám
                     </button>
                   ) : (
-                    <div className="flex-1 rounded-full bg-rose-50 border border-rose-100 py-2 text-center text-xs font-semibold text-rose-500">
-                      ❌ Lịch hẹn này đã bị hủy
+                    <div className="flex-1 rounded-full bg-amber-50 border border-amber-100 py-2 text-center text-xs font-semibold text-amber-600">
+                      ⏳ Đang chờ bác sĩ xác nhận lịch hẹn
                     </div>
                   )}
                   {(appointment.status === 'PENDING' || appointment.status === 'CONFIRMED') && (
@@ -617,9 +616,10 @@ function Dashboard() {
   }
 
   function renderDoctorSections(data: DoctorPayload) {
-    const appointmentsList = data.upcomingAppointments && data.upcomingAppointments.length > 0
+    const allAppts = data.upcomingAppointments && data.upcomingAppointments.length > 0
       ? data.upcomingAppointments
       : data.todaysAppointments;
+    const appointmentsList = allAppts.filter(a => a.status !== 'CANCELLED');
 
     return (
       <>

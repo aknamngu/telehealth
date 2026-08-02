@@ -43,6 +43,9 @@ function DoctorCallListener() {
   useEffect(() => {
     if (!authUser || authUser.role !== 'DOCTOR') return;
 
+    // Tham gia phòng của riêng bác sĩ để nhận thông báo từ mọi nơi
+    socket.emit('joinRoom', `doctor_${authUser.id}`);
+
     const normalCallHandler = (payload: IncomingCallPayload) => {
       console.log('Doctor received call:invite', payload);
       setIncomingCall(payload);
