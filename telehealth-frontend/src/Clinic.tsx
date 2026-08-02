@@ -53,17 +53,7 @@ type CallStatus = 'idle' | 'calling' | 'connected' | 'declined' | 'ended' | 'bus
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
-const TIME_SLOTS = [
-  { start: '08:00', end: '08:30' },
-  { start: '08:30', end: '09:00' },
-  { start: '09:00', end: '09:30' },
-  { start: '09:30', end: '10:00' },
-  { start: '10:00', end: '10:30' },
-  { start: '14:00', end: '14:30' },
-  { start: '14:30', end: '15:00' },
-  { start: '15:00', end: '15:30' },
-  { start: '15:30', end: '16:00' },
-];
+// TIME_SLOTS removed
 
 function Clinic() {
   const navigate = useNavigate();
@@ -101,9 +91,16 @@ function Clinic() {
 
   // Schedule Form State
   const [scheduleDate, setScheduleDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [selectedSlotIndex, setSelectedSlotIndex] = useState<number>(0);
+  const [selectedSlot, setSelectedSlot] = useState<{startTime: string, endTime: string} | null>(null);
+  const [availableSlots, setAvailableSlots] = useState<{startTime: string, endTime: string}[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingMessage, setBookingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Lịch sử bệnh án (cho Bác sĩ)
+  const [medicalHistory, setMedicalHistory] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -365,9 +362,41 @@ function Clinic() {
     console.log('📞 call:invite emitted', { appointmentId, doctorId: targetDoctorId });
   }, [callStatus, selectedDoctorId, doctor?.id, docId, appointmentId, authUser?.fullName, authUser?.role]);
 
+  // Tải danh sách giờ rảnh của bác sĩ cho Modal Đặt Lịch
+  useEffect(() => {
+    if (selectedDoctorId && scheduleDate) {
+      setLoadingSlots(true);
+      const token = getAuthToken();
+      fetch(`${API_URL}/doctors/${selectedDoctorId}/schedules?date=${scheduleDate}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.data) {
+            const unbooked = data.data.filter((s: any) => !s.isBooked);
+            setAvailableSlots(unbooked);
+            setSelectedSlot(null); // Reset selection
+          } else {
+            setAvailableSlots([]);
+          }
+        })
+        .catch(() => setAvailableSlots([]))
+        .finally(() => setLoadingSlots(false));
+    }
+  }, [selectedDoctorId, scheduleDate]);
+
   // Đặt lịch khám theo slot
   const handleScheduleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!authUser) {
+      setBookingMessage({ type: 'error', text: 'Vui lòng đăng nhập để đặt lịch!' });
+      return;
+    }
+    if (!selectedSlot) {
+      setBookingMessage({ type: 'error', text: 'Vui lòng chọn khung giờ khám!' });
+      return;
+    }
+
     const token = getAuthToken();
     if (!token) {
       navigate('/login');
@@ -377,7 +406,7 @@ function Clinic() {
     setBookingLoading(true);
     setBookingMessage(null);
 
-    const slot = TIME_SLOTS[selectedSlotIndex];
+    const slot = selectedSlot;
     const targetDoctorId = selectedDoctorId || doctor?.id || Number(docId);
 
     try {
@@ -390,8 +419,8 @@ function Clinic() {
         body: JSON.stringify({
           doctorId: targetDoctorId,
           appointmentDate: scheduleDate,
-          startTime: slot.start,
-          endTime: slot.end,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
         }),
       });
 
@@ -403,7 +432,7 @@ function Clinic() {
 
       setBookingMessage({
         type: 'success',
-        text: `Đặt lịch khám với ${doctor?.name ?? 'Bác sĩ'} (${slot.start} - ${slot.end} ngày ${scheduleDate}) thành công!`,
+        text: `Đặt lịch khám với ${doctor?.name ?? 'Bác sĩ'} (${slot.startTime} - ${slot.endTime} ngày ${scheduleDate}) thành công!`,
       });
       setTimeout(() => {
         setShowScheduleModal(false);
@@ -486,10 +515,39 @@ function Clinic() {
   }, [appointmentId, authUser?.role]);
 
   const toggleMic = () => {
-    const track = localStreamRef.current?.getAudioTracks()[0];
-    if (track) { track.enabled = !track.enabled; setIsMuted(!track.enabled); }
+    if (localStreamRef.current) {
+      const track = localStreamRef.current.getAudioTracks()[0];
+      track.enabled = !track.enabled;
+      setIsMuted(!track.enabled);
+    }
   };
 
+  const loadPatientHistory = async () => {
+    if (authUser?.role !== 'DOCTOR' || !appointmentId) return;
+    const token = getAuthToken();
+    if (!token) return;
+
+    setLoadingHistory(true);
+    try {
+      // 1. Lấy thông tin cuộc hẹn để biết patientId
+      const res = await fetch(`${API_URL}/appointments`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      const appt = data.data?.find((a: any) => a.id === Number(appointmentId));
+      if (!appt?.patientId) throw new Error("Không tìm thấy bệnh nhân");
+
+      // 2. Gọi API lấy lịch sử AI
+      const histRes = await fetch(`${API_URL}/appointments/patient/${appt.patientId}/history`, { headers: { Authorization: `Bearer ${token}` } });
+      const histData = await histRes.json();
+      setMedicalHistory(histData.data || []);
+      setShowHistory(true);
+    } catch(e) {
+      console.error(e);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  // ----- RENDERING -----
   const toggleVideo = () => {
     const track = localStreamRef.current?.getVideoTracks()[0];
     if (track) { track.enabled = !track.enabled; setIsVideoOff(!track.enabled); }
@@ -858,6 +916,50 @@ function Clinic() {
             </div>
           </div>
 
+          {/* Lịch sử khám bệnh (Chỉ hiển thị cho Bác sĩ) */}
+          {authUser?.role === 'DOCTOR' && (
+            <div className="flex flex-col overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Bệnh án</p>
+                  <h3 className="mt-1 text-lg font-black tracking-tight text-slate-950">Lịch sử khám AI</h3>
+                </div>
+                <button
+                  onClick={loadPatientHistory}
+                  disabled={loadingHistory}
+                  className="rounded-full bg-sky-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-sky-700 hover:bg-sky-100 transition"
+                >
+                  {loadingHistory ? 'Đang tải...' : showHistory ? 'Cập nhật' : 'Xem lịch sử'}
+                </button>
+              </div>
+              
+              {showHistory && (
+                <div className="max-h-[300px] overflow-y-auto bg-slate-50/60 p-4 space-y-4">
+                  {medicalHistory.length === 0 ? (
+                     <p className="text-center text-sm text-slate-500 py-4">Bệnh nhân chưa có lịch sử khám.</p>
+                  ) : (
+                    medicalHistory.map((hist: any) => (
+                      <div key={hist.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-xs font-bold text-slate-900">{new Date(hist.appointmentDate).toLocaleDateString('vi-VN')}</span>
+                          <span className="text-[10px] font-semibold text-slate-500">{hist.doctor?.fullName}</span>
+                        </div>
+                        {hist.prescriptions?.map((p: any) => (
+                          <div key={p.id} className="mb-2">
+                            <p className="text-[11px] font-bold text-sky-700">Chẩn đoán:</p>
+                            <p className="text-xs text-slate-700 mb-1">{p.diagnosis}</p>
+                            <p className="text-[11px] font-bold text-emerald-700">Đơn thuốc:</p>
+                            <p className="text-xs text-slate-700">{p.medicines}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Chat */}
           <div className="flex h-[500px] flex-col overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
@@ -968,23 +1070,35 @@ function Clinic() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">
-                  Khung giờ tư vấn
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                    Khung giờ tư vấn
+                  </label>
+                  {loadingSlots && <span className="text-[10px] font-bold text-sky-600 animate-pulse">Đang tải...</span>}
+                </div>
+                
                 <div className="grid grid-cols-3 gap-2.5">
-                  {TIME_SLOTS.map((slot, index) => (
-                    <button
-                      key={`${slot.start}-${slot.end}`}
-                      type="button"
-                      onClick={() => setSelectedSlotIndex(index)}
-                      className={`rounded-2xl border py-3 text-xs font-bold transition ${selectedSlotIndex === index
-                          ? 'border-sky-600 bg-sky-600 text-white shadow-md'
-                          : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                        }`}
-                    >
-                      {slot.start} - {slot.end}
-                    </button>
-                  ))}
+                  {!loadingSlots && availableSlots.length === 0 && (
+                    <div className="col-span-full py-3 text-center text-xs font-semibold text-slate-500 bg-slate-50 rounded-xl border border-slate-100">
+                      Bác sĩ không có lịch rảnh vào ngày này.
+                    </div>
+                  )}
+                  {availableSlots.map((slot) => {
+                    const isSelected = selectedSlot?.startTime === slot.startTime;
+                    return (
+                      <button
+                        key={`${slot.startTime}-${slot.endTime}`}
+                        type="button"
+                        onClick={() => setSelectedSlot(slot)}
+                        className={`rounded-2xl border py-3 text-xs font-bold transition ${isSelected
+                            ? 'border-sky-600 bg-sky-600 text-white shadow-md'
+                            : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                          }`}
+                      >
+                        {slot.startTime} - {slot.endTime}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

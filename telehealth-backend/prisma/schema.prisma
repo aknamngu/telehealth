@@ -18,9 +18,24 @@ model User {
   
   // Mối quan hệ
   doctorProfile       DoctorProfile?
-  patientAppointments Appointment[]  @relation("PatientAppointments")
-  doctorAppointments  Appointment[]  @relation("DoctorAppointments")
+  patientAppointments Appointment[]    @relation("PatientAppointments")
+  doctorAppointments  Appointment[]    @relation("DoctorAppointments")
   messages            MessageLog[]
+  doctorSchedules     DoctorSchedule[]
+}
+
+// 1.5. Bảng Lịch làm việc của Bác sĩ
+model DoctorSchedule {
+  id        Int      @id @default(autoincrement())
+  doctorId  Int
+  date      String   // VD: "2026-08-05"
+  startTime String   // VD: "08:00"
+  endTime   String   // VD: "08:30"
+  isBooked  Boolean  @default(false)
+  
+  doctor    User     @relation(fields: [doctorId], references: [id])
+
+  @@unique([doctorId, date, startTime]) // Bác sĩ không thể có 2 khung giờ giống hệt nhau trong 1 ngày
 }
 
 // 2. Bảng thông tin riêng của Bác sĩ

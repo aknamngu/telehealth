@@ -80,4 +80,52 @@ export class DoctorsService {
   remove(id: number) {
     return `This action removes a #${id} doctor`;
   }
+
+  async getSchedules(id: number, date: string) {
+    // Nếu có truyền date, lấy theo ngày, nếu không thì lấy tất cả
+    const whereClause: any = { doctorId: id };
+    if (date) {
+      whereClause.date = date;
+    }
+
+    const schedules = await this.prisma.doctorSchedule.findMany({
+      where: whereClause,
+      orderBy: { startTime: 'asc' },
+    });
+
+    return {
+      message: 'Lấy danh sách lịch rảnh thành công!',
+      data: schedules,
+    };
+  }
+
+  async toggleSchedule(doctorId: number, date: string, startTime: string, endTime: string) {
+    // Tìm xem lịch này đã tồn tại chưa
+    const existing = await this.prisma.doctorSchedule.findFirst({
+      where: {
+        doctorId,
+        date,
+        startTime,
+      },
+    });
+
+    if (existing) {
+      // Nếu có rồi thì xóa đi (tức là chuyển từ Rảnh -> Bận)
+      await this.prisma.doctorSchedule.delete({
+        where: { id: existing.id },
+      });
+      return { message: 'Đã hủy giờ rảnh thành công', data: null, action: 'removed' };
+    } else {
+      // Nếu chưa có thì tạo mới (tức là Bận -> Rảnh)
+      const newSchedule = await this.prisma.doctorSchedule.create({
+        data: {
+          doctorId,
+          date,
+          startTime,
+          endTime,
+        },
+      });
+      return { message: 'Đã thiết lập giờ rảnh thành công', data: newSchedule, action: 'added' };
+    }
+  }
 }

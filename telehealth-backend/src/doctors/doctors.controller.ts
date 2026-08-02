@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { DoctorsService } from './doctors.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 
@@ -22,5 +22,22 @@ export class DoctorsController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.doctorsService.findOne(+id);
+  }
+
+  // Lấy danh sách giờ rảnh của bác sĩ theo ngày: GET http://localhost:3000/doctors/:id/schedules?date=YYYY-MM-DD
+  @Get(':id/schedules')
+  getSchedules(@Param('id') id: string, @Query('date') date: string) {
+    return this.doctorsService.getSchedules(+id, date);
+  }
+
+  // Thêm/xóa giờ rảnh của bác sĩ: POST http://localhost:3000/doctors/:id/schedules/toggle
+  @Post(':id/schedules/toggle')
+  toggleSchedule(
+    @Param('id') id: string,
+    @Body('date') date: string,
+    @Body('startTime') startTime: string,
+    @Body('endTime') endTime: string,
+  ) {
+    return this.doctorsService.toggleSchedule(+id, date, startTime, endTime);
   }
 }

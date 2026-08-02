@@ -132,11 +132,7 @@ const PAYMENT_METHODS = [
   { id: 'ZALOPAY', label: 'ZaloPay', icon: Banknote, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
 ];
 
-const TIME_SLOTS = [
-  '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
-  '11:00', '11:30', '13:00', '13:30', '14:00', '14:30',
-  '15:00', '15:30', '16:00', '16:30', '17:00',
-];
+// TIME_SLOTS removed
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
@@ -164,6 +160,8 @@ function Home() {
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState('');
   const modalRef = useRef<HTMLDivElement>(null);
+  const [availableSlots, setAvailableSlots] = useState<{startTime: string, endTime: string}[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   // SOS Emergency Modal
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
@@ -231,6 +229,29 @@ function Home() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [bookingModal]);
 
+  // Tải danh sách giờ rảnh của bác sĩ
+  useEffect(() => {
+    if (bookingModal?.doctorId && bookingModal?.appointmentDate) {
+      setLoadingSlots(true);
+      const token = getAuthToken();
+      fetch(`${API_URL}/doctors/${bookingModal.doctorId}/schedules?date=${bookingModal.appointmentDate}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.data) {
+            // Lọc ra những khung giờ chưa bị đặt (isBooked = false)
+            const unbooked = data.data.filter((s: any) => !s.isBooked);
+            setAvailableSlots(unbooked);
+          } else {
+            setAvailableSlots([]);
+          }
+        })
+        .catch(() => setAvailableSlots([]))
+        .finally(() => setLoadingSlots(false));
+    }
+  }, [bookingModal?.doctorId, bookingModal?.appointmentDate]);
+
   // Unique specialties for filter
   const specialties = Array.from(new Set(doctors.map((d) => d.specialty))).filter(Boolean);
 
@@ -271,13 +292,7 @@ function Home() {
     document.body.style.overflow = '';
   }
 
-  function updateEndTime(start: string) {
-    const [h, m] = start.split(':').map(Number);
-    const total = h * 60 + m + 30;
-    const eh = Math.floor(total / 60);
-    const em = total % 60;
-    return `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
-  }
+
 
   async function submitBooking() {
     if (!bookingModal) return;
@@ -381,22 +396,33 @@ function Home() {
 
                 {/* Giờ */}
                 <div>
-                  <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-                    <Clock3 className="mr-1.5 inline h-3.5 w-3.5" />Khung giờ
-                  </label>
-                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-                    {TIME_SLOTS.map((slot) => (
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                      <Clock3 className="mr-1.5 inline h-3.5 w-3.5" />Khung giờ trống
+                    </label>
+                    {loadingSlots && <span className="text-[10px] font-bold text-sky-600 animate-pulse">Đang tải...</span>}
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {!loadingSlots && availableSlots.length === 0 && (
+                      <div className="col-span-full py-4 text-center text-sm font-semibold text-slate-500 bg-slate-50 rounded-xl border border-slate-100">
+                        Không có lịch rảnh nào trong ngày này.
+                      </div>
+                    )}
+                    {availableSlots.map((slot) => (
                       <button
-                        key={slot}
+                        key={slot.startTime}
                         type="button"
-                        onClick={() => setBookingModal({ ...bookingModal, startTime: slot, endTime: updateEndTime(slot) })}
-                        className={`rounded-xl border px-2 py-2 text-xs font-bold transition ${bookingModal.startTime === slot ? 'border-sky-500 bg-sky-500 text-white shadow-md shadow-sky-500/30' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-sky-300 hover:bg-sky-50'}`}
+                        onClick={() => setBookingModal({ ...bookingModal, startTime: slot.startTime, endTime: slot.endTime })}
+                        className={`rounded-xl border px-2 py-2 text-xs font-bold transition ${bookingModal.startTime === slot.startTime ? 'border-sky-500 bg-sky-500 text-white shadow-md shadow-sky-500/30' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-sky-300 hover:bg-sky-50'}`}
                       >
-                        {slot}
+                        {slot.startTime} - {slot.endTime}
                       </button>
                     ))}
                   </div>
-                  <p className="mt-2 text-xs text-slate-400">Mỗi ca khám 30 phút. Đến: {bookingModal.startTime} — Kết thúc: {bookingModal.endTime}</p>
+                  {bookingModal.startTime && (
+                     <p className="mt-2 text-xs text-slate-400">Đã chọn ca: {bookingModal.startTime} — Kết thúc: {bookingModal.endTime}</p>
+                  )}
                 </div>
 
                 {/* Triệu chứng */}
