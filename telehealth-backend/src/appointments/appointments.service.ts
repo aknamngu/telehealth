@@ -10,7 +10,7 @@ export class AppointmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: MessagesGateway,
-  ) {}
+  ) { }
 
   async create(createAppointmentDto: CreateAppointmentDto, user: { sub: number; role: string }) {
     const { patientId, doctorId, appointmentDate, startTime, endTime } = createAppointmentDto;
@@ -18,16 +18,16 @@ export class AppointmentsService {
     const resolvedDoctorId = user.role === 'DOCTOR' ? user.sub : doctorId;
 
     // 1. Kiểm tra xem Bệnh nhân (Patient) có tồn tại trong hệ thống không
-    const patient = await this.prisma.user.findUnique({ 
-      where: { id: resolvedPatientId } 
+    const patient = await this.prisma.user.findUnique({
+      where: { id: resolvedPatientId }
     });
     if (!patient || patient.role !== 'PATIENT') {
       throw new BadRequestException('Bệnh nhân không tồn tại trên hệ thống rồi bạn ơi!');
     }
 
     // 2. Kiểm tra xem Bác sĩ (Doctor) có tồn tại và đúng role không
-    const doctor = await this.prisma.user.findUnique({ 
-      where: { id: resolvedDoctorId } 
+    const doctor = await this.prisma.user.findUnique({
+      where: { id: resolvedDoctorId }
     });
     if (!doctor || doctor.role !== 'DOCTOR') {
       throw new BadRequestException('Bác sĩ không tồn tại hoặc không hợp lệ!');
@@ -93,6 +93,39 @@ export class AppointmentsService {
     };
   }
 
+  // Tạo nhanh hồ sơ cấp cứu SOS (Lấy Bác sĩ đầu tiên làm dummy)
+  async createEmergency(emergencyType: string, user: { sub: number; role: string }) {
+    if (user.role !== 'PATIENT') {
+      throw new ForbiddenException('Chỉ bệnh nhân mới được dùng tính năng cấp cứu!');
+    }
+
+    // Tìm một bác sĩ bất kỳ (dummy) để gán vào record (vì bảng yêu cầu có doctorId)
+    const doctor = await this.prisma.user.findFirst({ where: { role: 'DOCTOR' } });
+    if (!doctor) {
+      throw new BadRequestException('Hệ thống chưa có bác sĩ nào, không thể tạo ca cấp cứu!');
+    }
+
+    const now = new Date();
+    const appointment = await this.prisma.appointment.create({
+      data: {
+        patientId: user.sub,
+        doctorId: doctor.id,
+        appointmentDate: now,
+        startTime: `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`,
+        endTime: `${now.getHours() + 1}:${now.getMinutes().toString().padStart(2, '0')}`,
+        status: 'PENDING',
+      }
+    });
+
+    return {
+      message: "Tạo ca cấp cứu thành công!",
+      data: {
+        appointmentId: appointment.id,
+        doctorId: doctor.id
+      }
+    };
+  }
+
   async findAll(user: { sub: number; role: string }) {
     // Bốc toàn bộ danh sách lịch hẹn lên, nối bảng lấy kèm tên bệnh nhân và bác sĩ cho trực quan
     const where =
@@ -110,7 +143,8 @@ export class AppointmentsService {
         },
         doctor: {
           select: { fullName: true }
-        }
+        },
+        prescriptions: true,
       }
     });
 
@@ -166,6 +200,55 @@ export class AppointmentsService {
     };
   }
 
+  // Hoàn tất ca khám: Ghi chẩn đoán, kê đơn thuốc và đổi trạng thái thành COMPLETED
+  async completeConsultation(id: number, diagnosis: string, medicines: string, user: { sub: number; role: string }) {
+    if (user.role !== 'DOCTOR') {
+      throw new ForbiddenException('Chỉ bác sĩ mới có quyền kê đơn và hoàn tất ca khám!');
+    }
+
+    const appointment = await this.prisma.appointment.findUnique({ where: { id } });
+    if (!appointment) {
+      throw new NotFoundException('Không tìm thấy lịch hẹn này!');
+    }
+
+    if (appointment.doctorId !== user.sub) {
+      throw new ForbiddenException('Bạn chỉ có thể kê đơn cho bệnh nhân của mình!');
+    }
+
+    const existingPrescription = await this.prisma.prescription.findFirst({
+      where: { appointmentId: id }
+    });
+
+    if (existingPrescription) {
+      throw new BadRequestException('Cuộc hẹn này đã được hoàn tất và kê đơn rồi!');
+    }
+
+    // Dùng transaction để đảm bảo lưu đơn thuốc và đổi status cùng lúc
+    const result = await this.prisma.$transaction(async (prisma) => {
+      // 1. Tạo đơn thuốc
+      const prescription = await prisma.prescription.create({
+        data: {
+          appointmentId: id,
+          diagnosis,
+          medicines,
+        }
+      });
+
+      // 2. Cập nhật trạng thái cuộc hẹn
+      const updatedAppt = await prisma.appointment.update({
+        where: { id },
+        data: { status: 'COMPLETED' }
+      });
+
+      return { prescription, appointment: updatedAppt };
+    });
+
+    return {
+      message: 'Lưu chẩn đoán, đơn thuốc và hoàn tất ca khám thành công!',
+      data: result,
+    };
+  }
+
   // HÀM MỚI TÍCH HỢP TỔNG HỢP BỆNH ÁN AI: Bốc toàn bộ lịch sử y tế của một Bệnh nhân
   async getPatientMedicalHistory(patientId: number, user: { sub: number; role: string }) {
     if (user.role === 'PATIENT' && user.sub !== patientId) {
@@ -174,7 +257,7 @@ export class AppointmentsService {
 
     // Tìm tất cả các cuộc hẹn của bệnh nhân này và gom toàn bộ dữ liệu vệ tinh liên quan
     const medicalHistory = await this.prisma.appointment.findMany({
-      where: { 
+      where: {
         patientId: patientId,
         status: 'COMPLETED' // Chỉ lôi những ca khám đã hoàn thành xong xuôi
       },

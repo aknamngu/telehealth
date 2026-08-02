@@ -8,7 +8,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('appointments')
 export class AppointmentsController {
-  constructor(private readonly appointmentsService: AppointmentsService) {}
+  constructor(private readonly appointmentsService: AppointmentsService) { }
 
   // 1. Cổng đặt lịch hẹn mới: POST http://localhost:3000/appointments
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -16,6 +16,14 @@ export class AppointmentsController {
   @Post()
   create(@Body() createAppointmentDto: CreateAppointmentDto, @CurrentUser() user: { sub: number; role: string }) {
     return this.appointmentsService.create(createAppointmentDto, user);
+  }
+
+  // 1.5. Cổng tạo ca cấp cứu SOS: POST http://localhost:3000/appointments/emergency
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('PATIENT')
+  @Post('emergency')
+  createEmergency(@Body('emergencyType') emergencyType: string, @CurrentUser() user: { sub: number; role: string }) {
+    return this.appointmentsService.createEmergency(emergencyType, user);
   }
 
   // 2. Cổng lấy danh sách lịch hẹn: GET http://localhost:3000/appointments
@@ -34,7 +42,20 @@ export class AppointmentsController {
     return this.appointmentsService.updateStatus(+id, status, user);
   }
 
-  // 4. Cổng lấy lịch sử bệnh án tổng hợp AI: GET http://localhost:3000/appointments/patient/:patientId/history
+  // 4. Cổng hoàn tất khám và kê đơn: POST http://localhost:3000/appointments/:id/complete
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('DOCTOR')
+  @Post(':id/complete')
+  completeConsultation(
+    @Param('id') id: string,
+    @Body('diagnosis') diagnosis: string,
+    @Body('medicines') medicines: string,
+    @CurrentUser() user: { sub: number; role: string }
+  ) {
+    return this.appointmentsService.completeConsultation(+id, diagnosis, medicines, user);
+  }
+
+  // 5. Cổng lấy lịch sử bệnh án tổng hợp AI: GET http://localhost:3000/appointments/patient/:patientId/history
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'DOCTOR', 'PATIENT')
   @Get('patient/:patientId/history')

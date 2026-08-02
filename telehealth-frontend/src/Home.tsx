@@ -165,6 +165,40 @@ function Home() {
   const [bookingError, setBookingError] = useState('');
   const modalRef = useRef<HTMLDivElement>(null);
 
+  // SOS Emergency Modal
+  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+  const [selectedEmergencyType, setSelectedEmergencyType] = useState('Đau thắt ngực / Khó thở');
+
+  const authUser = getAuthUser() as AuthUser | null;
+
+  async function handleEmergencySubmit() {
+    if (!authUser || authUser.role !== 'PATIENT') {
+      navigate('/login');
+      return;
+    }
+    const token = getAuthToken();
+    try {
+      const response = await fetch(`${API_URL}/appointments/emergency`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ emergencyType: selectedEmergencyType }),
+      });
+      if (!response.ok) {
+        throw new Error('Lỗi khi tạo ca cấp cứu');
+      }
+      const data = await response.json();
+      const apptId = data.data.appointmentId;
+      setShowEmergencyModal(false);
+      navigate(`/clinic?appointmentId=${apptId}&isEmergency=true`);
+    } catch (err) {
+      console.error(err);
+      alert('Hệ thống gặp sự cố khi tạo ca cấp cứu. Hãy thử lại hoặc gọi số khẩn cấp quốc gia!');
+    }
+  }
+
   useEffect(() => {
     fetch(`${API_URL}/doctors`)
       .then((response) => response.json())
@@ -1103,6 +1137,77 @@ function Home() {
           </div>
         </section>
       </main>
+
+      {/* Floating SOS Button (Chỉ hiện cho PATIENT) */}
+      {authUser?.role === 'PATIENT' && (
+        <button
+          onClick={() => setShowEmergencyModal(true)}
+          className="fixed bottom-8 right-8 z-50 flex h-16 items-center gap-3 rounded-full bg-gradient-to-r from-red-600 to-rose-600 px-6 font-bold text-white shadow-2xl shadow-red-600/30 ring-4 ring-red-500/20 transition hover:scale-105 hover:from-red-500 hover:to-rose-500 hover:shadow-red-500/40 active:scale-95"
+        >
+          <span className="relative flex h-8 w-8">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-40"></span>
+            <span className="relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-lg backdrop-blur">
+              🚨
+            </span>
+          </span>
+          CẤP CỨU SOS
+        </button>
+      )}
+
+      {/* SOS Emergency Modal */}
+      {showEmergencyModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-3xl border-4 border-rose-500 bg-white shadow-[0_0_50px_rgba(244,63,94,0.5)]">
+            <div className="bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 px-6 py-6 text-center text-white">
+              <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white/20 text-4xl shadow-inner backdrop-blur-md">
+                🚨
+              </span>
+              <h2 className="mt-4 text-2xl font-black uppercase tracking-widest">Báo động đỏ</h2>
+              <p className="mt-1 text-sm font-medium text-rose-100">Kích hoạt hệ thống y tế khẩn cấp</p>
+            </div>
+            <div className="p-6">
+              <p className="mb-4 text-center text-sm font-semibold text-slate-600">
+                Lựa chọn tình trạng khẩn cấp:
+              </p>
+              <div className="flex flex-col gap-3">
+                {[
+                  'Đau thắt ngực / Khó thở',
+                  'Tai biến / Đột quỵ',
+                  'Chấn thương nghiêm trọng',
+                  'Ngộ độc',
+                  'Khác (Cần hỗ trợ y tế gấp)',
+                ].map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setSelectedEmergencyType(type)}
+                    className={`rounded-2xl border-2 px-4 py-3 text-left font-bold transition ${
+                      selectedEmergencyType === type
+                        ? 'border-rose-500 bg-rose-50 text-rose-700'
+                        : 'border-slate-100 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50/50'
+                    }`}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-3 bg-slate-50 p-6">
+              <button
+                onClick={() => setShowEmergencyModal(false)}
+                className="flex-1 rounded-full border border-slate-200 bg-white py-3 font-bold text-slate-600 transition hover:bg-slate-100"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                onClick={handleEmergencySubmit}
+                className="flex-1 rounded-full bg-rose-600 py-3 font-black text-white shadow-lg shadow-rose-500/30 transition hover:bg-rose-700"
+              >
+                GỌI CẤP CỨU NGAY
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <footer className="border-t border-slate-200/70 bg-white/80">
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-14 sm:px-6 lg:grid-cols-[1.1fr_0.8fr_0.8fr] lg:px-8">

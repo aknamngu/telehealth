@@ -35,6 +35,7 @@ interface AppointmentItem {
   status: string;
   patient?: { id?: number; fullName: string; email?: string };
   doctor?: { id?: number; fullName: string; email?: string };
+  prescriptions?: PrescriptionItem[];
 }
 
 interface PrescriptionItem {
@@ -154,6 +155,7 @@ function Dashboard() {
   const [error, setError] = useState('');
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [newApptNotif, setNewApptNotif] = useState<NewAppointmentNotif | null>(null);
+  const [selectedPrescription, setSelectedPrescription] = useState<{ appointmentId: number, date: string, doctorName: string, diagnosis: string, medicines: string } | null>(null);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -387,6 +389,52 @@ function Dashboard() {
           </div>
         ) : null}
       </main>
+
+      {/* Modal View Prescription */}
+      {selectedPrescription && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)] rounded-[2rem] bg-white p-8 shadow-2xl">
+            <div className="mb-6 flex items-start justify-between">
+              <div>
+                <h3 className="text-2xl font-black tracking-tight text-slate-900">Hồ sơ & Đơn thuốc</h3>
+                <p className="text-sm font-medium text-slate-500">Khám ngày {selectedPrescription.date} với {selectedPrescription.doctorName}</p>
+              </div>
+              <button onClick={() => setSelectedPrescription(null)} className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Chẩn đoán bệnh
+                </label>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-800">
+                  {selectedPrescription.diagnosis}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Đơn thuốc & Lời khuyên
+                </label>
+                <div className="whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-800">
+                  {selectedPrescription.medicines}
+                </div>
+              </div>
+
+              <div className="pt-4">
+                <button
+                  onClick={() => setSelectedPrescription(null)}
+                  className="w-full rounded-full bg-slate-900 py-3.5 text-sm font-bold text-white shadow-lg transition hover:bg-slate-800"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -566,14 +614,38 @@ function Dashboard() {
 
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
-            <FileText className="h-4 w-4" />
-            Prescriptions
+            <CheckCircle2 className="h-4 w-4" />
+            Lịch sử khám
           </div>
           <div className="mt-4 space-y-3">
-            {data.prescriptions.map((item) => (
-              <div key={item.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
-                <p className="font-bold text-slate-900">{item.diagnosis}</p>
-                <p className="mt-1 text-sm text-slate-600">{item.medicines}</p>
+            {data.completedAppointments.length === 0 ? (
+              <p className="text-center py-6 text-sm text-slate-400">Chưa có lịch sử khám bệnh</p>
+            ) : data.completedAppointments.map((appointment) => (
+              <div key={appointment.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-bold text-slate-900">{formatDoctorName(appointment.doctor?.fullName)}</p>
+                    <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate)} · {appointment.startTime} – {appointment.endTime}</p>
+                  </div>
+                  <span className="rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide bg-slate-200 text-slate-700">ĐÃ HOÀN TẤT</span>
+                </div>
+                {appointment.prescriptions && appointment.prescriptions.length > 0 && (
+                  <div className="mt-3">
+                    <button
+                      onClick={() => setSelectedPrescription({
+                        appointmentId: appointment.id,
+                        date: formatDate(appointment.appointmentDate),
+                        doctorName: formatDoctorName(appointment.doctor?.fullName),
+                        diagnosis: appointment.prescriptions![0].diagnosis,
+                        medicines: appointment.prescriptions![0].medicines
+                      })}
+                      className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-bold text-white transition hover:bg-slate-800"
+                    >
+                      <FileText className="h-3 w-3" />
+                      Xem Hồ sơ & Đơn thuốc
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -223,12 +223,22 @@ function App() {
 
     socket.connect();
 
-    if (authUser.role === 'DOCTOR') {
-      socket.emit('joinRoom', `doctor_${authUser.id}`);
-      console.log('Doctor socket joined room:', `doctor_${authUser.id}`);
+    const onConnect = () => {
+      if (authUser.role === 'DOCTOR') {
+        socket.emit('joinRoom', `doctor_${authUser.id}`);
+        console.log('Doctor socket joined room (on connect):', `doctor_${authUser.id}`);
+      }
+    };
+
+    socket.on('connect', onConnect);
+
+    // Nếu socket đã connect sẵn thì gọi luôn
+    if (socket.connected) {
+      onConnect();
     }
 
     return () => {
+      socket.off('connect', onConnect);
       socket.disconnect();
     };
   }, [authUser?.id, authUser?.role]);

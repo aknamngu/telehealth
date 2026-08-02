@@ -65,13 +65,6 @@ const TIME_SLOTS = [
   { start: '15:30', end: '16:00' },
 ];
 
-const EMERGENCY_TYPES = [
-  { id: 'drowning', label: '🏊‍♂️ Đuối nước / Ngạt thở', desc: 'Bệnh nhân vừa vớt lên, ngạt nước, cần hướng dẫn ép tim / hô hấp nhân tạo khẩn cấp!' },
-  { id: 'accident', label: '🚗 Tai nạn / Chấn thương nặng', desc: 'Mất máu, gãy xương hoặc chấn thương nguy kịch tại hiện trường.' },
-  { id: 'cardiac', label: '🫀 Co giật / Ngưng tim đột ngột', desc: 'Bệnh nhân bất tỉnh, co giật hoặc đột ngụy cần can thiệp gấp.' },
-  { id: 'other', label: '⚠️ Cấp cứu khẩn cấp khác', desc: 'Các tình huống nguy kịch tính mạng khác.' },
-];
-
 function Clinic() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -98,17 +91,20 @@ function Clinic() {
 
   // Modals state
   const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   
+  // Prescription Form State
+  const [diagnosis, setDiagnosis] = useState('');
+  const [medicines, setMedicines] = useState('');
+  const [prescriptionLoading, setPrescriptionLoading] = useState(false);
+  const [prescriptionMessage, setPrescriptionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   // Schedule Form State
   const [scheduleDate, setScheduleDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number>(0);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingMessage, setBookingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Emergency Form State
-  const [selectedEmergencyType, setSelectedEmergencyType] = useState(EMERGENCY_TYPES[0].id);
-  const [emergencyDetails, setEmergencyDetails] = useState('');
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -305,8 +301,12 @@ function Clinic() {
       setCallStatus('ended');
       pcRef.current?.close();
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+      delete (window as any)._tempRemoteStream;
       if (data?.message) {
         alert(data.message);
+      }
+      if (authUser?.role === 'DOCTOR') {
+        setShowPrescriptionModal(true);
       }
     };
 
@@ -325,6 +325,18 @@ function Clinic() {
       setCallStatus('calling');
     }
 
+    if (authUser?.role === 'PATIENT' && isEmergencyParam) {
+      console.log('🚨 Patient auto SOS: emitting call:emergency');
+      setCallStatus('calling');
+      setIsEmergencyCall(true);
+      socket.emit('call:emergency', {
+        appointmentId,
+        doctorId: Number(docId),
+        fromName: authUser?.fullName ?? 'Bệnh nhân khẩn cấp',
+        emergencyType: 'Cấp cứu nguy kịch',
+      });
+    }
+
     return () => {
       socket.off('call:accept', handleCallAccept);
       socket.off('offer', handleOffer);
@@ -334,7 +346,7 @@ function Clinic() {
       socket.off('call:decline', handleCallDecline);
       socket.off('call:end', handleCallEnd);
     };
-  }, [cameraReady, appointmentId, authUser?.id, authUser?.fullName, authUser?.role, autoAccept]);
+  }, [cameraReady, appointmentId, authUser?.id, authUser?.fullName, authUser?.role, autoAccept, isEmergencyParam, docId]);
 
   // ─── Actions ──────────────────────────────────────────────────────────────
   const startCall = useCallback(() => {
@@ -352,28 +364,6 @@ function Clinic() {
     });
     console.log('📞 call:invite emitted', { appointmentId, doctorId: targetDoctorId });
   }, [callStatus, selectedDoctorId, doctor?.id, docId, appointmentId, authUser?.fullName, authUser?.role]);
-
-  // Kích hoạt BÁO ĐỘNG CẤP CỨU SOS
-  const handleEmergencySubmit = (e: FormEvent) => {
-    e.preventDefault();
-    setShowEmergencyModal(false);
-
-    const emergencyObj = EMERGENCY_TYPES.find((t) => t.id === selectedEmergencyType);
-    const targetDoctorId = selectedDoctorId || doctor?.id || Number(docId);
-
-    setCallStatus('calling');
-    setIsEmergencyCall(true);
-
-    socket.emit('call:emergency', {
-      appointmentId,
-      doctorId: targetDoctorId,
-      fromName: authUser?.fullName ?? 'Bệnh nhân khẩn cấp',
-      emergencyType: emergencyObj?.label ?? 'Cấp cứu nguy kịch',
-      details: emergencyDetails,
-    });
-
-    console.log('🚨 SOS Emergency emitted:', { appointmentId, emergencyType: emergencyObj?.label });
-  };
 
   // Đặt lịch khám theo slot
   const handleScheduleSubmit = async (e: FormEvent) => {
@@ -429,13 +419,71 @@ function Clinic() {
     }
   };
 
+  const handlePrescriptionSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    const token = getAuthToken();
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    if (!diagnosis.trim() || !medicines.trim()) {
+      setPrescriptionMessage({ type: 'error', text: 'Vui lòng điền đầy đủ Chẩn đoán và Đơn thuốc!' });
+      return;
+    }
+
+    setPrescriptionLoading(true);
+    setPrescriptionMessage(null);
+
+    try {
+      const response = await fetch(`${API_URL}/appointments/${appointmentId}/complete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          diagnosis,
+          medicines,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message ?? 'Đã có lỗi xảy ra khi kê đơn!');
+      }
+
+      setPrescriptionMessage({
+        type: 'success',
+        text: 'Đã hoàn tất ca khám và gửi đơn thuốc cho bệnh nhân thành công!',
+      });
+      setTimeout(() => {
+        setShowPrescriptionModal(false);
+        navigate('/'); // Điều hướng về trang chủ sau khi hoàn thành
+      }, 2500);
+    } catch (err) {
+      setPrescriptionMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Lỗi không xác định!',
+      });
+    } finally {
+      setPrescriptionLoading(false);
+    }
+  };
+
   const endCall = useCallback(() => {
     socket.emit('call:end', { appointmentId });
     pcRef.current?.close();
     setCallStatus('ended');
     setIsEmergencyCall(false);
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-  }, [appointmentId]);
+    delete (window as any)._tempRemoteStream;
+    
+    if (authUser?.role === 'DOCTOR') {
+      setShowPrescriptionModal(true);
+    }
+  }, [appointmentId, authUser?.role]);
 
   const toggleMic = () => {
     const track = localStreamRef.current?.getAudioTracks()[0];
@@ -497,12 +545,6 @@ function Clinic() {
                 >
                   <Clock className="h-4 w-4" />
                   Đặt lịch hẹn
-                </button>
-                <button
-                  onClick={() => setShowEmergencyModal(true)}
-                  className="inline-flex items-center gap-2 rounded-full bg-rose-600 px-3.5 py-2 text-xs font-black text-white shadow-md shadow-rose-500/30 hover:bg-rose-700 transition animate-pulse"
-                >
-                  🆘 CẤP CỨU SOS
                 </button>
               </>
             )}
@@ -633,7 +675,7 @@ function Clinic() {
                         <p className="text-sm leading-7 text-slate-300">
                           {authUser?.role === 'DOCTOR'
                             ? 'Bệnh nhân chưa bắt đầu cuộc gọi.'
-                            : 'Bấm "Bắt đầu gọi" hoặc chọn nút SOS nếu gặp tình huống khẩn cấp.'}
+                            : 'Bấm "Bắt đầu gọi" để yêu cầu bác sĩ tham gia tư vấn.'}
                         </p>
                       </div>
                     )}
@@ -935,11 +977,10 @@ function Clinic() {
                       key={`${slot.start}-${slot.end}`}
                       type="button"
                       onClick={() => setSelectedSlotIndex(index)}
-                      className={`rounded-2xl border py-3 text-xs font-bold transition ${
-                        selectedSlotIndex === index
+                      className={`rounded-2xl border py-3 text-xs font-bold transition ${selectedSlotIndex === index
                           ? 'border-sky-600 bg-sky-600 text-white shadow-md'
                           : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                      }`}
+                        }`}
                     >
                       {slot.start} - {slot.end}
                     </button>
@@ -949,9 +990,8 @@ function Clinic() {
 
               {bookingMessage && (
                 <div
-                  className={`rounded-2xl p-3.5 text-xs font-bold ${
-                    bookingMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
-                  }`}
+                  className={`rounded-2xl p-3.5 text-xs font-bold ${bookingMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                    }`}
                 >
                   {bookingMessage.text}
                 </div>
@@ -978,101 +1018,60 @@ function Clinic() {
         </div>
       )}
 
-      {/* 🚨 MODAL KÍCH HOẠT BÁO ĐỘNG CẤP CỨU KHẨN CẤP SOS */}
-      {showEmergencyModal && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-md">
-          <div className="w-full max-w-lg overflow-hidden rounded-3xl border-2 border-rose-500 bg-white p-6 shadow-2xl">
-            <div className="flex items-center gap-3 border-b border-rose-100 pb-4">
-              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-rose-600 text-2xl text-white">
-                🆘
-              </div>
+
+      {/* ═══ MODAL KÊ ĐƠN THUỐC & CHẨN ĐOÁN (Chỉ dành cho Bác sĩ) ═══ */}
+      {showPrescriptionModal && authUser?.role === 'DOCTOR' && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)] rounded-[2rem] bg-white p-8 shadow-2xl">
+            <div className="mb-6 flex items-center justify-between">
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-600">CẤP CỨU Y TẾ NGUY KỊCH</p>
-                <h3 className="text-xl font-black text-slate-900">Gửi tín hiệu Báo động SOS khẩn cấp</h3>
+                <h3 className="text-2xl font-black tracking-tight text-slate-900">Kết luận khám & Kê đơn</h3>
+                <p className="text-sm font-medium text-slate-500">Hoàn tất quy trình khám cho bệnh nhân</p>
               </div>
             </div>
 
-            <form onSubmit={handleEmergencySubmit} className="mt-5 space-y-4">
-              {/* Select Doctor for Emergency */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-1.5">
-                  Bác sĩ ứng cứu chính
-                </label>
-                <select
-                  value={selectedDoctorId}
-                  onChange={(e) => {
-                    const id = Number(e.target.value);
-                    setSelectedDoctorId(id);
-                    const found = doctorsList.find((d) => d.id === id);
-                    if (found) setDoctor(found);
-                  }}
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 focus:border-rose-500 focus:outline-none"
-                >
-                  {doctorsList.map((doc) => (
-                    <option key={doc.id} value={doc.id}>
-                      {doc.name} — {doc.specialty}
-                    </option>
-                  ))}
-                </select>
+            {prescriptionMessage && (
+              <div className={`mb-4 rounded-2xl p-4 text-sm font-semibold ${prescriptionMessage.type === 'success' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                {prescriptionMessage.text}
               </div>
+            )}
 
+            <form onSubmit={handlePrescriptionSubmit} className="space-y-6">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">
-                  Chọn tình huống khẩn cấp
-                </label>
-                <div className="space-y-2">
-                  {EMERGENCY_TYPES.map((item) => (
-                    <label
-                      key={item.id}
-                      onClick={() => setSelectedEmergencyType(item.id)}
-                      className={`flex cursor-pointer flex-col rounded-2xl border p-3.5 transition ${
-                        selectedEmergencyType === item.id
-                          ? 'border-rose-500 bg-rose-50/70 shadow-sm'
-                          : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-black text-slate-900">{item.label}</span>
-                        <input
-                          type="radio"
-                          name="emergencyType"
-                          checked={selectedEmergencyType === item.id}
-                          onChange={() => setSelectedEmergencyType(item.id)}
-                          className="h-4 w-4 text-rose-600"
-                        />
-                      </div>
-                      <p className="mt-1 text-xs leading-5 text-slate-600">{item.desc}</p>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-1">
-                  Mô tả ngắn tình trạng hiện tại
+                <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Chẩn đoán bệnh
                 </label>
                 <textarea
-                  value={emergencyDetails}
-                  onChange={(e) => setEmergencyDetails(e.target.value)}
-                  placeholder="VD: Người bị đuối nước vừa vớt lên bờ lúc 5 phút trước, đang ngạt thở..."
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm focus:border-rose-500 focus:outline-none"
-                  rows={2}
+                  required
+                  value={diagnosis}
+                  onChange={(e) => setDiagnosis(e.target.value)}
+                  placeholder="Ghi rõ chẩn đoán bệnh tình của bệnh nhân..."
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium focus:border-sky-500 focus:bg-white focus:outline-none"
+                  rows={3}
                 />
               </div>
 
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowEmergencyModal(false)}
-                  className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Hủy
-                </button>
+              <div>
+                <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Đơn thuốc & Lời khuyên
+                </label>
+                <textarea
+                  required
+                  value={medicines}
+                  onChange={(e) => setMedicines(e.target.value)}
+                  placeholder="VD: 1. Panadol 500mg (2 viên/ngày)&#10;2. Oresol (1 gói/ngày)&#10;Nghỉ ngơi nhiều, uống đủ nước..."
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium focus:border-emerald-500 focus:bg-white focus:outline-none"
+                  rows={4}
+                />
+              </div>
+
+              <div className="flex gap-4 pt-4">
                 <button
                   type="submit"
-                  className="flex-1 rounded-full bg-rose-600 py-3 text-sm font-black text-white shadow-lg shadow-rose-600/30 transition hover:bg-rose-700 active:scale-95"
+                  disabled={prescriptionLoading}
+                  className="flex-1 rounded-full bg-slate-900 py-3.5 text-sm font-bold text-white shadow-lg transition hover:bg-slate-800 disabled:opacity-50"
                 >
-                  🚨 GỬI BÁO ĐỘNG SOS
+                  {prescriptionLoading ? 'Đang lưu...' : 'Lưu & Gửi cho bệnh nhân'}
                 </button>
               </div>
             </form>
