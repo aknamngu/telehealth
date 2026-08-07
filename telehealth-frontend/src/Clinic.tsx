@@ -27,6 +27,7 @@ interface Doctor {
 
 interface Message {
   id?: number;
+  senderId?: number;
   sender: 'patient' | 'doctor';
   text: string;
   time: string;
@@ -104,6 +105,11 @@ function Clinic() {
   const [medicalHistory, setMedicalHistory] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Trạng thái Ghi hình (Record Video)
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<BlobPart[]>([]);
 
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -194,6 +200,7 @@ function Clinic() {
           const loaded = data.data.map((m: any) => ({
             id: m.id,
             sender: m.sender?.role === 'DOCTOR' ? 'doctor' : 'patient',
+            senderId: m.sender?.id || m.senderId,
             text: m.content,
             type: m.messageType,
             time: new Date(m.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
@@ -337,9 +344,15 @@ function Clinic() {
     const handleNewMessage = (msg: any) => {
       setMessages((prev) => {
         if (prev.some(m => m.id === msg.id)) return prev; // Avoid duplicates
+        
+        // Cố gắng parse sender từ server
+        const senderRole = msg.sender?.role || msg.senderRole;
+        const mappedSender = senderRole === 'DOCTOR' ? 'doctor' : 'patient';
+        
         return [...prev, {
           id: msg.id,
-          sender: msg.sender?.role === 'DOCTOR' ? 'doctor' : 'patient',
+          sender: mappedSender,
+          senderId: msg.senderId || msg.sender?.id,
           text: msg.content,
           type: msg.messageType,
           time: new Date(msg.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
@@ -383,6 +396,7 @@ function Clinic() {
       socket.off('call:busy', handleCallBusy);
       socket.off('call:decline', handleCallDecline);
       socket.off('call:end', handleCallEnd);
+      socket.off('newMessage', handleNewMessage);
     };
   }, [cameraReady, appointmentId, authUser?.id, authUser?.fullName, authUser?.role, autoAccept, isEmergencyParam, docId]);
 
@@ -585,6 +599,58 @@ function Clinic() {
       console.error(e);
     } finally {
       setLoadingHistory(false);
+    }
+  };
+
+  const startRecording = () => {
+    // 1. Gộp stream local và remote
+    const remoteStream = (window as any)._tempRemoteStream || remoteVideoRef.current?.srcObject;
+    if (!localStreamRef.current && !remoteStream) return alert('Chưa có luồng video để ghi hình');
+
+    const tracks: MediaStreamTrack[] = [];
+    if (localStreamRef.current) tracks.push(...localStreamRef.current.getTracks());
+    if (remoteStream) tracks.push(...(remoteStream as MediaStream).getTracks());
+    
+    if (tracks.length === 0) return;
+    const combinedStream = new MediaStream(tracks);
+
+    // 2. Khởi tạo MediaRecorder
+    recordedChunksRef.current = [];
+    try {
+      const mr = new MediaRecorder(combinedStream, { mimeType: 'video/webm; codecs=vp9' });
+      mediaRecorderRef.current = mr;
+
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+
+      mr.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `telehealth_record_${new Date().getTime()}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        }, 100);
+      };
+
+      mr.start();
+      setIsRecording(true);
+    } catch (e) {
+      console.error('Lỗi khởi tạo MediaRecorder:', e);
+      alert('Trình duyệt không hỗ trợ ghi hình hoặc cấu hình lỗi.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
     }
   };
 
@@ -797,6 +863,15 @@ function Clinic() {
                     >
                       <VideoOff className="h-4 w-4" />
                     </button>
+                    {authUser?.role === 'DOCTOR' && (
+                      <button
+                        onClick={isRecording ? stopRecording : startRecording}
+                        className={`grid h-11 w-11 place-items-center rounded-full border shadow-lg backdrop-blur transition active:scale-90 ${isRecording ? 'border-rose-400 bg-rose-500 text-white animate-pulse' : 'border-white/20 bg-white/20 text-white hover:bg-white/30'}`}
+                        title={isRecording ? 'Dừng ghi hình' : 'Ghi hình phiên khám'}
+                      >
+                        <div className={`h-3 w-3 rounded-full ${isRecording ? 'bg-white' : 'bg-rose-500'}`} />
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -1060,7 +1135,10 @@ function Clinic() {
               ) : (
                 <div className="flex flex-col gap-3">
                   {messages.map((msg, i) => {
-                    const isMe = msg.sender === (authUser?.role === 'DOCTOR' ? 'doctor' : 'patient');
+                    const isMe = msg.senderId
+                      ? msg.senderId === authUser?.id
+                      : msg.sender === (authUser?.role === 'DOCTOR' ? 'doctor' : 'patient');
+                      
                     return (
                       <div key={i} className={`flex gap-2 mb-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                         {!isMe && (

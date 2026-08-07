@@ -14,6 +14,7 @@ import { AiSummariesModule } from './ai-summaries/ai-summaries.module';
 import { MessagesModule } from './messages/messages.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { WalletModule } from './wallet/wallet.module';
+import { MedicationRemindersModule } from './medication-reminders/medication-reminders.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { WalletModule } from './wallet/wallet.module';
     MessagesModule,
     DashboardModule,
     WalletModule,
+    MedicationRemindersModule,
    
   ],
   controllers: [AppController],

@@ -246,6 +246,7 @@ export class DashboardService {
           prescriptions: true,
           vitalSigns: true,
           aiSummaries: true,
+          review: true,
         },
       }),
       this.prisma.prescription.findMany({

@@ -64,6 +64,25 @@ export class AppointmentsService {
       throw new BadRequestException(`Bác sĩ đã có lịch khám vào khung giờ ${startTime} - ${endTime} ngày ${targetDate.toLocaleDateString('vi-VN')} rồi! Vui lòng chọn khung giờ khác.`);
     }
 
+    // 2.6 Kiểm tra xem Bệnh nhân đã có lịch trùng ngày và khung giờ này với bác sĩ khác chưa
+    const existingPatientConflict = await this.prisma.appointment.findFirst({
+      where: {
+        patientId: resolvedPatientId,
+        appointmentDate: {
+          gte: dateStart,
+          lte: dateEnd,
+        },
+        startTime,
+        status: {
+          in: ['PENDING', 'CONFIRMED', 'ACCEPTED'],
+        },
+      },
+    });
+
+    if (existingPatientConflict) {
+      throw new BadRequestException(`Bạn đã có lịch hẹn khám vào khung giờ ${startTime} - ${endTime} ngày ${targetDate.toLocaleDateString('vi-VN')} rồi! Mỗi khung giờ chỉ được đặt 1 bác sĩ.`);
+    }
+
     // 2.7 Kiểm tra số dư ví bệnh nhân (VD phí khám là 100,000)
     const FEE = 100000;
     const wallet = await this.prisma.wallet.findUnique({

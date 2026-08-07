@@ -235,5 +235,8 @@ export class MessagesGateway {
 
     // 2. Chấp nhận và vào ca cấp cứu SOS
     client.to(`room_${payload.emergencyAppointmentId}`).emit('call:accept');
+
+    // 3. Thông báo cho TẤT CẢ các bác sĩ khác để ẩn popup SOS
+    this.server.emit('call:emergency:handled', { appointmentId: payload.emergencyAppointmentId });
   }
 }

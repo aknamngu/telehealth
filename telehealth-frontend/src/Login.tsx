@@ -96,37 +96,34 @@ function Login() {
               <ShieldCheck className="h-5 w-5" />
               Tài khoản mẫu để test nhanh
             </div>
-            <div className="mt-4 grid gap-3 text-sm text-slate-200 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded-2xl bg-black/20 p-3">
-                <p className="font-semibold text-white">Admin</p>
-                <p>admin@telehealth.vn</p>
-                <p>admin123</p>
-              </div>
-              <div className="rounded-2xl bg-black/20 p-3">
-                <p className="font-semibold text-white">Patient</p>
-                <p>patient.an@example.com</p>
-                <p>password123</p>
-              </div>
-              <div className="rounded-2xl bg-black/20 p-3">
-                <p className="font-semibold text-white">Doctor 1 (Tim mạch)</p>
-                <p>son.dang@example.com</p>
-                <p>password123</p>
-              </div>
-              <div className="rounded-2xl bg-black/20 p-3">
-                <p className="font-semibold text-white">Doctor 2 (Nội tổng quát)</p>
-                <p>phuong.tran@example.com</p>
-                <p>password123</p>
-              </div>
-              <div className="rounded-2xl bg-black/20 p-3">
-                <p className="font-semibold text-white">Doctor 3 (Nhi khoa)</p>
-                <p>hien.nguyen@example.com</p>
-                <p>password123</p>
-              </div>
-              <div className="rounded-2xl bg-black/20 p-3">
-                <p className="font-semibold text-white">Doctor 4 (Da liễu)</p>
-                <p>quang.le@example.com</p>
-                <p>password123</p>
-              </div>
+            <div className="mt-8 grid grid-cols-2 gap-4 text-xs text-white/70 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+              {[
+                { name: 'Admin', email: 'admin@telehealth.vn', pass: 'admin123' },
+                { name: 'Đỗ Quốc Khoa', email: 'patient.khoa@example.com', pass: 'password123' },
+                { name: 'Nguyễn Ngọc yến Nhi', email: 'patient.ngoc@example.com', pass: 'password123' },
+                { name: 'Nguyễn Thị Khánh Uyên', email: 'patient.tam@example.com', pass: 'password123' },
+                { name: 'Trần Hà Vy', email: 'patient.hoa@example.com', pass: 'password123' },
+                { name: 'Huỳnh Nguyễn Anh Thy', email: 'patient.linh@example.com', pass: 'password123' },
+                { name: 'Nguyễn Minh Thư', email: 'patient.an@example.com', pass: 'password123' },
+                { name: 'BS. Nguyễn Minh Tâm', email: 'quang.le@example.com', pass: 'password123' },
+                { name: 'BS. Hoàng Hồng Minh Anh', email: 'hien.nguyen@example.com', pass: 'password123' },
+                { name: 'ThS. BS Trần Lê Uyên Phương', email: 'phuong.tran@example.com', pass: 'password123' },
+                { name: 'BS. CKI Đặng Huỳnh Diễm Kiều', email: 'son.dang@example.com', pass: 'password123' },
+              ].map((acc, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    setEmail(acc.email);
+                    setPassword(acc.pass);
+                  }}
+                  className="rounded-2xl bg-black/20 p-3 text-left transition hover:bg-white/10 hover:-translate-y-1 active:scale-95 border border-transparent hover:border-white/20"
+                >
+                  <p className="font-semibold text-white mb-1 truncate" title={acc.name}>{acc.name}</p>
+                  <p className="truncate opacity-80" title={acc.email}>{acc.email}</p>
+                  <p className="opacity-80">••••••••</p>
+                </button>
+              ))}
             </div>
           </div>
         </section>

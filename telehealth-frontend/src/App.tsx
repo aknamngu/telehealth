@@ -56,12 +56,24 @@ function DoctorCallListener() {
       setEmergencyCall(payload);
     };
 
+    const emergencyHandledHandler = (payload: { appointmentId: string | number }) => {
+      setEmergencyCall((prev) => {
+        if (prev && String(prev.appointmentId) === String(payload.appointmentId)) {
+          console.log('🚨 SOS call handled by another doctor, hiding modal.');
+          return null;
+        }
+        return prev;
+      });
+    };
+
     socket.on('call:invite', normalCallHandler);
     socket.on('call:emergency', emergencyCallHandler);
+    socket.on('call:emergency:handled', emergencyHandledHandler);
 
     return () => {
       socket.off('call:invite', normalCallHandler);
       socket.off('call:emergency', emergencyCallHandler);
+      socket.off('call:emergency:handled', emergencyHandledHandler);
     };
   }, [authUser?.id, authUser?.role]);
 

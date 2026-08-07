@@ -82,6 +82,55 @@ export class UsersService {
     };
   }
 
+  async getProfile(id: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        doctorProfile: true,
+        patientProfile: true,
+      }
+    });
+    return { message: 'Lấy hồ sơ thành công!', data: user };
+  }
+
+  // Bệnh nhân cập nhật hồ sơ y tế cá nhân
+  async updatePatientProfile(userId: number, dto: { medicalHistory?: string; allergies?: string; bloodType?: string }) {
+    const profile = await this.prisma.patientProfile.upsert({
+      where: { userId },
+      update: dto,
+      create: { userId, ...dto },
+    });
+    return { message: 'Cập nhật hồ sơ bệnh nhân thành công!', data: profile };
+  }
+
+  // Bác sĩ cập nhật hồ sơ chuyên môn (chuyển sang PENDING để Admin duyệt)
+  async updateDoctorProfile(userId: number, dto: { specialty?: string; experienceYears?: number; bio?: string }) {
+    const profile = await this.prisma.doctorProfile.upsert({
+      where: { userId },
+      update: { ...dto, status: 'PENDING' },
+      create: { userId, specialty: dto.specialty ?? '', experienceYears: dto.experienceYears ?? 0, bio: dto.bio, status: 'PENDING' },
+    });
+    return { message: 'Hồ sơ đã được gửi, đang chờ Admin phê duyệt!', data: profile };
+  }
+
+  // Admin phê duyệt hồ sơ Bác sĩ
+  async approveDoctorProfile(userId: number, status: 'APPROVED' | 'REJECTED') {
+    const profile = await this.prisma.doctorProfile.update({
+      where: { userId },
+      data: { status },
+    });
+    return { message: `Đã ${status === 'APPROVED' ? 'phê duyệt' : 'từ chối'} hồ sơ bác sĩ!`, data: profile };
+  }
+
+  // Lấy danh sách bác sĩ PENDING cho Admin duyệt
+  async getPendingDoctors() {
+    const profiles = await this.prisma.doctorProfile.findMany({
+      where: { status: 'PENDING' },
+      include: { user: { select: { id: true, fullName: true, email: true } } }
+    });
+    return { message: 'Lấy danh sách hồ sơ chờ duyệt thành công!', data: profiles };
+  }
+
   remove(id: number) {
     return `This action removes a #${id} user`;
   }
