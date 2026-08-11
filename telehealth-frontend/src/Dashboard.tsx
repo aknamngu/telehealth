@@ -27,6 +27,7 @@ import {
   Star,
 } from 'lucide-react';
 import { clearAuthSession, getAuthToken, type AuthUser } from './auth';
+import { useLanguage } from './i18n';
 import { socket } from './socket';
 
 interface ApiWrapper<T> {
@@ -174,31 +175,31 @@ const TIME_SLOTS = [
   '15:30 - 16:00', '16:00 - 16:30', '16:30 - 17:00'
 ];
 
-function formatDate(value?: string | Date) {
+function formatDate(value?: string | Date, language: 'vi' | 'en' = 'vi') {
   if (!value) return '---';
-  return new Date(value).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return new Date(value).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-function formatTime(value?: string | Date) {
+function formatTime(value?: string | Date, language: 'vi' | 'en' = 'vi') {
   if (!value) return '---';
-  return new Date(value).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  return new Date(value).toLocaleTimeString(language === 'vi' ? 'vi-VN' : 'en-US', { hour: '2-digit', minute: '2-digit' });
 }
 
-function formatMessagePreview(message: MessageItem) {
+function formatMessagePreview(message: MessageItem, language: 'vi' | 'en' = 'vi') {
   if (message.messageType === 'IMAGE' || message.content?.startsWith('data:image/')) {
-    return 'Đã gửi một hình ảnh';
+    return language === 'vi' ? 'Đã gửi một hình ảnh' : 'Sent an image';
   }
 
   if (message.messageType === 'FILE') {
-    return 'Đã gửi một tệp đính kèm';
+    return language === 'vi' ? 'Đã gửi một tệp đính kèm' : 'Sent an attachment';
   }
 
   const content = message.content?.trim();
-  if (!content) return 'Tin nhắn không có nội dung';
+  if (!content) return language === 'vi' ? 'Tin nhắn không có nội dung' : 'Message has no content';
 
   // Never render credential-like hashes or other opaque secrets in a dashboard.
   if (/^[a-f0-9]{32,}(?::[a-f0-9]{32,})+$/i.test(content)) {
-    return 'Nội dung được bảo vệ';
+    return language === 'vi' ? 'Nội dung được bảo vệ' : 'Protected content';
   }
 
   return content;
@@ -215,6 +216,8 @@ function formatDoctorName(name?: string) {
 
 function Dashboard() {
   const navigate = useNavigate();
+  const { language } = useLanguage();
+  const tr = useCallback((vi: string, en: string) => language === 'vi' ? vi : en, [language]);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [payload, setPayload] = useState<AdminPayload | PatientPayload | DoctorPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -302,7 +305,7 @@ function Dashboard() {
         const data = (await response.json()) as ApiWrapper<AuthUser>;
 
         if (!response.ok) {
-          throw new Error(data.message ?? 'Phiên đăng nhập không còn hợp lệ');
+          throw new Error(data.message ?? tr('Phiên đăng nhập không còn hợp lệ', 'Your session is no longer valid'));
         }
 
         setAuthUser(data.data);
@@ -311,7 +314,7 @@ function Dashboard() {
         clearAuthSession();
         navigate('/login', { replace: true });
       });
-  }, [navigate]);
+  }, [navigate, tr]);
 
   const loadDashboard = useCallback(() => {
     const token = getAuthToken();
@@ -325,15 +328,15 @@ function Dashboard() {
     })
       .then(async (response) => {
         const data = (await response.json()) as ApiWrapper<AdminPayload | PatientPayload | DoctorPayload>;
-        if (!response.ok) throw new Error(data.message ?? 'Không thể tải dashboard');
+        if (!response.ok) throw new Error(data.message ?? tr('Không thể tải bảng điều khiển', 'Unable to load dashboard'));
         setPayload(data.data);
       })
       .catch((loadError) => {
         setPayload(null);
-        setError(loadError instanceof Error ? loadError.message : 'Không thể tải dashboard');
+        setError(loadError instanceof Error ? loadError.message : tr('Không thể tải bảng điều khiển', 'Unable to load dashboard'));
       })
       .finally(() => setLoading(false));
-  }, [navigate]);
+  }, [navigate, tr]);
 
   const loadWalletAndInvoices = useCallback(() => {
     const token = getAuthToken();
@@ -426,11 +429,41 @@ function Dashboard() {
   }, [authUser?.id, authUser?.role]);
 
   const roleLabel = useMemo(() => {
-    if (authUser?.role === 'ADMIN') return 'Admin Overview';
-    if (authUser?.role === 'PATIENT') return 'Patient Care Center';
-    if (authUser?.role === 'DOCTOR') return 'Doctor Command Room';
-    return 'Telehealth Dashboard';
-  }, [authUser?.role]);
+    if (authUser?.role === 'ADMIN') return tr('Tổng quan quản trị', 'Admin Overview');
+    if (authUser?.role === 'PATIENT') return tr('Trung tâm chăm sóc bệnh nhân', 'Patient Care Center');
+    if (authUser?.role === 'DOCTOR') return tr('Trung tâm điều hành bác sĩ', 'Doctor Command Room');
+    return tr('Bảng điều khiển TeleHealth', 'TeleHealth Dashboard');
+  }, [authUser?.role, tr]);
+
+  const statusLabel = useCallback((status: string) => ({
+    PENDING: tr('Chờ duyệt', 'Pending'),
+    CONFIRMED: tr('Đã xác nhận', 'Confirmed'),
+    ACCEPTED: tr('Đã chấp nhận', 'Accepted'),
+    COMPLETED: tr('Đã hoàn tất', 'Completed'),
+    CANCELLED: tr('Đã hủy', 'Cancelled'),
+    PAID: tr('Đã thanh toán', 'Paid'),
+    REFUNDED: tr('Đã hoàn tiền', 'Refunded'),
+    PENDING_REFUND: tr('Chờ hoàn tiền', 'Pending refund'),
+  }[status] ?? status), [tr]);
+
+  const roleName = useCallback((role?: string) => ({
+    ADMIN: tr('Quản trị viên', 'Administrator'),
+    DOCTOR: tr('Bác sĩ', 'Doctor'),
+    PATIENT: tr('Bệnh nhân', 'Patient'),
+  }[role ?? ''] ?? role ?? '---'), [tr]);
+
+  const localizeSpecialty = useCallback((specialty?: string) => {
+    if (!specialty || language === 'vi') return specialty ?? '---';
+    return ({
+      'Tim mạch & Cấp cứu AI': 'Cardiology & AI Emergency Care',
+      'Nội tổng quát & Telehealth': 'General Medicine & TeleHealth',
+      'Nhi khoa & Dinh dưỡng': 'Pediatrics & Nutrition',
+      'Da liễu & Khám từ xa': 'Dermatology & Remote Care',
+      'Chuyên khoa Tim mạch & Cấp cứu AI': 'Cardiology & AI Emergency Care',
+      'Chuyên khoa Nội tổng quát & Chăm sóc từ xa': 'General Medicine & Remote Care',
+      'Chuyên khoa Nhi & Dinh dưỡng': 'Pediatrics & Nutrition',
+    } as Record<string, string>)[specialty] ?? specialty;
+  }, [language]);
 
   const statCards = useMemo(() => {
     if (!payload || !authUser) return [];
@@ -438,37 +471,37 @@ function Dashboard() {
     if (authUser.role === 'ADMIN') {
       const admin = payload as AdminPayload;
       return [
-        ['Users', admin.stats.userCount],
-        ['Doctors', admin.stats.doctorCount],
-        ['Patients', admin.stats.patientCount],
-        ['Appointments', admin.stats.appointmentCount],
-        ['Prescriptions', admin.stats.prescriptionCount],
-        ['Vitals', admin.stats.vitalCount],
+        [tr('Người dùng', 'Users'), admin.stats.userCount],
+        [tr('Bác sĩ', 'Doctors'), admin.stats.doctorCount],
+        [tr('Bệnh nhân', 'Patients'), admin.stats.patientCount],
+        [tr('Lịch hẹn', 'Appointments'), admin.stats.appointmentCount],
+        [tr('Đơn thuốc', 'Prescriptions'), admin.stats.prescriptionCount],
+        [tr('Chỉ số sức khỏe', 'Vitals'), admin.stats.vitalCount],
       ];
     }
 
     if (authUser.role === 'PATIENT') {
       const patient = payload as PatientPayload;
       return [
-        ['Appointments', patient.stats.totalAppointments],
-        ['Upcoming', patient.stats.upcomingAppointments],
-        ['Completed', patient.stats.completedAppointments],
-        ['Prescriptions', patient.stats.prescriptionCount],
-        ['Vitals', patient.stats.vitalCount],
-        ['Messages', patient.stats.messageCount],
+        [tr('Lịch hẹn', 'Appointments'), patient.stats.totalAppointments],
+        [tr('Sắp tới', 'Upcoming'), patient.stats.upcomingAppointments],
+        [tr('Đã hoàn tất', 'Completed'), patient.stats.completedAppointments],
+        [tr('Đơn thuốc', 'Prescriptions'), patient.stats.prescriptionCount],
+        [tr('Chỉ số sức khỏe', 'Vitals'), patient.stats.vitalCount],
+        [tr('Tin nhắn', 'Messages'), patient.stats.messageCount],
       ];
     }
 
     const doctor = payload as DoctorPayload;
     return [
-      ['Appointments', doctor.stats.totalAppointments],
-      ['Upcoming', doctor.stats.upcomingAppointments ?? doctor.stats.todayAppointments],
-      ['Completed', doctor.stats.completedAppointments],
-      ['Prescriptions', doctor.stats.prescriptionCount],
-      ['Vitals', doctor.stats.vitalCount],
-      ['Messages', doctor.stats.messageCount],
+      [tr('Lịch hẹn', 'Appointments'), doctor.stats.totalAppointments],
+      [tr('Sắp tới', 'Upcoming'), doctor.stats.upcomingAppointments ?? doctor.stats.todayAppointments],
+      [tr('Đã hoàn tất', 'Completed'), doctor.stats.completedAppointments],
+      [tr('Đơn thuốc', 'Prescriptions'), doctor.stats.prescriptionCount],
+      [tr('Chỉ số sức khỏe', 'Vitals'), doctor.stats.vitalCount],
+      [tr('Tin nhắn', 'Messages'), doctor.stats.messageCount],
     ];
-  }, [payload, authUser]);
+  }, [payload, authUser, tr]);
 
   const handleLogout = () => {
     clearAuthSession();
@@ -496,9 +529,9 @@ function Dashboard() {
 
   const handleRefund = async (invoiceId: number) => {
     showConfirm({
-      title: 'Xác nhận hoàn tiền',
-      message: 'Bạn có chắc chắn muốn hoàn tiền cho giao dịch này?',
-      confirmLabel: 'Hoàn tiền',
+      title: tr('Xác nhận hoàn tiền', 'Confirm refund'),
+      message: tr('Bạn có chắc chắn muốn hoàn tiền cho giao dịch này?', 'Are you sure you want to refund this transaction?'),
+      confirmLabel: tr('Hoàn tiền', 'Refund'),
       variant: 'success',
       onConfirm: async () => {
         const token = getAuthToken();
@@ -508,8 +541,8 @@ function Dashboard() {
             headers: { Authorization: `Bearer ${token}` }
           });
           const data = await res.json();
-          if (!res.ok) throw new Error(data.message || 'Lỗi hoàn tiền');
-          showToast('success', '✅ Hoàn tiền thành công!');
+          if (!res.ok) throw new Error(data.message || tr('Lỗi hoàn tiền', 'Refund failed'));
+          showToast('success', tr('✅ Hoàn tiền thành công!', '✅ Refund completed!'));
           loadWalletAndInvoices();
         } catch (err: any) {
           showToast('error', err.message);
@@ -521,9 +554,9 @@ function Dashboard() {
   // Quản lý trạng thái User (Khóa / Mở khóa)
   async function toggleUserStatus(userId: number, currentStatus: boolean) {
     showConfirm({
-      title: currentStatus ? 'Khoá tài khoản' : 'Mở khoá tài khoản',
-      message: `Bạn có chắc muốn ${currentStatus ? 'KHOÁ' : 'MỞ KHOÁ'} tài khoản này?`,
-      confirmLabel: currentStatus ? 'Khoá' : 'Mở khoá',
+      title: currentStatus ? tr('Khóa tài khoản', 'Lock account') : tr('Mở khóa tài khoản', 'Unlock account'),
+      message: currentStatus ? tr('Bạn có chắc muốn khóa tài khoản này?', 'Are you sure you want to lock this account?') : tr('Bạn có chắc muốn mở khóa tài khoản này?', 'Are you sure you want to unlock this account?'),
+      confirmLabel: currentStatus ? tr('Khóa', 'Lock') : tr('Mở khóa', 'Unlock'),
       variant: currentStatus ? 'danger' : 'success',
       onConfirm: async () => {
         const token = getAuthToken();
@@ -535,14 +568,14 @@ function Dashboard() {
             body: JSON.stringify({ isActive: !currentStatus }),
           });
           if (res.ok) {
-            showToast('success', `Đã ${currentStatus ? 'khoá' : 'mở khoá'} thành công!`);
+            showToast('success', currentStatus ? tr('Đã khóa tài khoản!', 'Account locked!') : tr('Đã mở khóa tài khoản!', 'Account unlocked!'));
             loadDashboard();
           } else {
             const data = await res.json();
-            showToast('error', data.message || 'Có lỗi xảy ra');
+            showToast('error', data.message || tr('Có lỗi xảy ra', 'An error occurred'));
           }
         } catch (_e) {
-          showToast('error', 'Không thể kết nối đến máy chủ!');
+          showToast('error', tr('Không thể kết nối đến máy chủ!', 'Unable to connect to the server!'));
         }
       }
     });
@@ -566,15 +599,15 @@ function Dashboard() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Lỗi khi gửi đánh giá');
+      if (!res.ok) throw new Error(data.message || tr('Lỗi khi gửi đánh giá', 'Unable to submit review'));
       
-      showToast('success', '✨ Cảm ơn bạn đã gửi đánh giá!');
+      showToast('success', tr('✨ Cảm ơn bạn đã gửi đánh giá!', '✨ Thank you for your review!'));
       setRatingModal(null);
       setRatingVal(5);
       setRatingComment('');
       loadDashboard();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Có lỗi xảy ra');
+      showToast('error', err instanceof Error ? err.message : tr('Có lỗi xảy ra', 'An error occurred'));
     } finally {
       setRatingLoading(false);
     }
@@ -612,9 +645,9 @@ function Dashboard() {
       if (!res.ok) throw new Error(data.message);
       setPatientProfile(data.data);
       setShowProfileModal(false);
-      showToast('success', '✅ Cập nhật hồ sơ thành công!');
+      showToast('success', tr('✅ Cập nhật hồ sơ thành công!', '✅ Profile updated successfully!'));
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Lỗi lưu hồ sơ');
+      showToast('error', err instanceof Error ? err.message : tr('Lỗi lưu hồ sơ', 'Unable to save profile'));
     } finally { setProfileSaving(false); }
   };
 
@@ -645,9 +678,9 @@ function Dashboard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
       setShowDoctorProfileModal(false);
-      showToast('info', '📨 Hồ sơ đã gửi, đang chờ Admin phê duyệt!');
+      showToast('info', tr('📨 Hồ sơ đã gửi, đang chờ quản trị viên phê duyệt!', '📨 Profile submitted for administrator approval!'));
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Lỗi lưu hồ sơ');
+      showToast('error', err instanceof Error ? err.message : tr('Lỗi lưu hồ sơ', 'Unable to save profile'));
     } finally { setDoctorProfileSaving(false); }
   };
 
@@ -674,10 +707,10 @@ function Dashboard() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
-      showToast(status === 'APPROVED' ? 'success' : 'warning', status === 'APPROVED' ? '✅ Đã phê duyệt hồ sơ!' : '❌ Đã từ chối hồ sơ!');
+      showToast(status === 'APPROVED' ? 'success' : 'warning', status === 'APPROVED' ? tr('✅ Đã phê duyệt hồ sơ!', '✅ Profile approved!') : tr('❌ Đã từ chối hồ sơ!', '❌ Profile rejected!'));
       loadPendingDoctors();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Lỗi khi xử lý');
+      showToast('error', err instanceof Error ? err.message : tr('Lỗi khi xử lý', 'Unable to process request'));
     }
   };
 
@@ -696,7 +729,7 @@ function Dashboard() {
 
   const addReminder = async () => {
     if (!reminderForm.medicineName.trim() || !reminderForm.prescriptionId) {
-      showToast('warning', 'Vui lòng chọn đơn thuốc và điền tên thuốc!'); return;
+      showToast('warning', tr('Vui lòng chọn đơn thuốc và điền tên thuốc!', 'Select a prescription and enter the medication name!')); return;
     }
     setReminderSaving(true);
     try {
@@ -710,9 +743,9 @@ function Dashboard() {
       setShowReminderModal(false);
       setReminderForm({ prescriptionId: 0, medicineName: '', reminderTime: '08:00' });
       loadReminders();
-      showToast('success', '💊 Đã thêm lịch nhắc uống thuốc!');
+      showToast('success', tr('💊 Đã thêm lịch nhắc uống thuốc!', '💊 Medication reminder added!'));
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Lỗi thêm nhắc nhở');
+      showToast('error', err instanceof Error ? err.message : tr('Lỗi thêm nhắc nhở', 'Unable to add reminder'));
     } finally { setReminderSaving(false); }
   };
 
@@ -728,9 +761,9 @@ function Dashboard() {
 
   const deleteReminder = async (id: number) => {
     showConfirm({
-      title: 'Xóa lịch nhắc',
-      message: 'Bạn có chắc muốn xóa lịch nhắc uống thuốc này?',
-      confirmLabel: 'Xóa',
+      title: tr('Xóa lịch nhắc', 'Delete reminder'),
+      message: tr('Bạn có chắc muốn xóa lịch nhắc uống thuốc này?', 'Are you sure you want to delete this medication reminder?'),
+      confirmLabel: tr('Xóa', 'Delete'),
       variant: 'danger',
       onConfirm: async () => {
         try {
@@ -740,7 +773,7 @@ function Dashboard() {
           });
           if (res.ok) {
             loadReminders();
-            showToast('success', 'Đã xóa lịch nhắc!');
+            showToast('success', tr('Đã xóa lịch nhắc!', 'Reminder deleted!'));
           }
         } catch (e) { console.error(e); }
       }
@@ -755,12 +788,12 @@ function Dashboard() {
       const hhmm = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
       const matched = reminders.find(r => r.isActive && r.reminderTime === hhmm);
       if (matched) {
-        setReminderToast(`💊 Đến giờ uống thuốc: ${matched.medicineName}`);
+        setReminderToast(`💊 ${tr('Đến giờ uống thuốc', 'Time to take your medication')}: ${matched.medicineName}`);
         setTimeout(() => setReminderToast(null), 8000);
       }
     }, 30000);
     return () => { if (reminderCheckRef.current) clearInterval(reminderCheckRef.current); };
-  }, [authUser, reminders]);
+  }, [authUser, reminders, tr]);
 
   // Load prescriptions từ completedAppointments cho dropdown nhắc thuốc
   useEffect(() => {
@@ -829,7 +862,7 @@ function Dashboard() {
                 onClick={() => setConfirmModal(null)}
                 className="flex-1 rounded-full border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
               >
-                Hủy bỏ
+                {tr('Hủy bỏ', 'Cancel')}
               </button>
               <button
                 onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }}
@@ -839,7 +872,7 @@ function Dashboard() {
                     : 'bg-emerald-600 shadow-emerald-600/30 hover:bg-emerald-700'
                 }`}
               >
-                {confirmModal.confirmLabel || 'Xác nhận'}
+                {confirmModal.confirmLabel || tr('Xác nhận', 'Confirm')}
               </button>
             </div>
           </div>
@@ -853,7 +886,7 @@ function Dashboard() {
             <Pill className="h-5 w-5 text-violet-600" />
           </div>
           <div className="flex-1">
-            <p className="text-xs font-bold uppercase tracking-wider text-violet-600">Nhắc uống thuốc</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-violet-600">{tr('Nhắc uống thuốc', 'Medication reminder')}</p>
             <p className="mt-1 text-sm font-semibold text-slate-800">{reminderToast}</p>
           </div>
           <button onClick={() => setReminderToast(null)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
@@ -866,26 +899,26 @@ function Dashboard() {
           <div className="bg-gradient-to-r from-emerald-600 to-teal-500 px-4 py-3 text-white flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bell className="h-4 w-4" />
-              <span className="text-xs font-black uppercase tracking-[0.2em]">Lịch hẹn mới!</span>
+              <span className="text-xs font-black uppercase tracking-[0.2em]">{tr('Lịch hẹn mới!', 'New appointment!')}</span>
             </div>
             <button onClick={() => setNewApptNotif(null)} className="grid h-6 w-6 place-items-center rounded-full bg-white/20 hover:bg-white/30">
               <X className="h-3 w-3" />
             </button>
           </div>
           <div className="p-4">
-            <p className="font-bold text-slate-900">Bệnh nhân {newApptNotif.patientName}</p>
+            <p className="font-bold text-slate-900">{tr('Bệnh nhân', 'Patient')} {newApptNotif.patientName}</p>
             <p className="mt-1 text-sm text-slate-600">
-              Đặt lịch ngày <strong>{new Date(newApptNotif.date).toLocaleDateString('vi-VN')}</strong> lúc <strong>{newApptNotif.startTime}</strong>
+              {tr('Đặt lịch ngày', 'Appointment on')} <strong>{new Date(newApptNotif.date).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US')}</strong> {tr('lúc', 'at')} <strong>{newApptNotif.startTime}</strong>
             </p>
             <div className="mt-3 flex gap-2">
               <button
                 onClick={() => { setNewApptNotif(null); loadDashboard(); }}
                 className="flex-1 rounded-full bg-emerald-600 py-2 text-xs font-black text-white hover:bg-emerald-700"
               >
-                Xem lịch
+                {tr('Xem lịch', 'View schedule')}
               </button>
               <button onClick={() => setNewApptNotif(null)} className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                Bỏ qua
+                {tr('Bỏ qua', 'Dismiss')}
               </button>
             </div>
           </div>
@@ -896,7 +929,7 @@ function Dashboard() {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
           <button onClick={() => navigate('/')} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 transition hover:text-sky-700">
             <ArrowLeft className="h-4 w-4" />
-            Về trang chủ
+            {tr('Về trang chủ', 'Back to home')}
           </button>
           <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
             <Sparkles className="h-4 w-4 text-sky-600" />
@@ -904,7 +937,7 @@ function Dashboard() {
           </div>
           <button onClick={handleLogout} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-rose-200 hover:text-rose-700">
             <LogOut className="h-4 w-4" />
-            Đăng xuất
+            {tr('Đăng xuất', 'Sign out')}
           </button>
         </div>
       </div>
@@ -913,18 +946,18 @@ function Dashboard() {
         <section className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl space-y-3">
-              <p className="text-xs font-bold uppercase tracking-[0.3em] text-sky-700">Dashboard</p>
-              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Bảng điều khiển telehealth theo vai trò</h1>
+              <p className="text-xs font-bold uppercase tracking-[0.3em] text-sky-700">{tr('Bảng điều khiển', 'Dashboard')}</p>
+              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{tr('Bảng điều khiển TeleHealth theo vai trò', 'Role-based TeleHealth dashboard')}</h1>
               <p className="text-slate-600">
-                Xin chào {authUser?.fullName ?? 'bạn'} - dữ liệu đang được khóa theo tài khoản đăng nhập hiện tại.
+                {tr('Xin chào', 'Hello')} {authUser?.fullName ?? tr('bạn', 'there')} — {tr('dữ liệu được bảo vệ theo tài khoản đăng nhập hiện tại.', 'data is protected according to the currently signed-in account.')}
               </p>
             </div>
 
             <div className="flex items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3">
               <ShieldCheck className="h-5 w-5 text-sky-600" />
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Current role</p>
-                <p className="text-sm font-semibold text-slate-800">{authUser?.role ?? '---'}</p>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">{tr('Vai trò hiện tại', 'Current role')}</p>
+                <p className="text-sm font-semibold text-slate-800">{roleName(authUser?.role)}</p>
               </div>
             </div>
           </div>
@@ -941,7 +974,7 @@ function Dashboard() {
 
         {loading ? (
           <div className="mt-6 rounded-[2rem] border border-slate-100 bg-white px-6 py-16 text-center text-sm font-semibold text-sky-700 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
-            Đang tải dữ liệu dashboard...
+            {tr('Đang tải dữ liệu...', 'Loading dashboard data...')}
           </div>
         ) : error ? (
           <div className="mt-6 rounded-[2rem] border border-rose-100 bg-rose-50 px-6 py-10 text-center text-sm font-semibold text-rose-700 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
@@ -962,8 +995,8 @@ function Dashboard() {
           <div className="w-full max-w-lg animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)] rounded-[2rem] bg-white p-8 shadow-2xl">
             <div className="mb-6 flex items-start justify-between">
               <div>
-                <h3 className="text-2xl font-black tracking-tight text-slate-900">Hồ sơ & Đơn thuốc</h3>
-                <p className="text-sm font-medium text-slate-500">Khám ngày {selectedPrescription.date} với {selectedPrescription.doctorName}</p>
+                <h3 className="text-2xl font-black tracking-tight text-slate-900">{tr('Hồ sơ & đơn thuốc', 'Medical record & prescription')}</h3>
+                <p className="text-sm font-medium text-slate-500">{tr('Khám ngày', 'Consultation on')} {selectedPrescription.date} {tr('với', 'with')} {selectedPrescription.doctorName}</p>
               </div>
               <button onClick={() => setSelectedPrescription(null)} className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200">
                 <X className="h-4 w-4" />
@@ -973,7 +1006,7 @@ function Dashboard() {
             <div className="space-y-6">
               <div>
                 <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                  Chẩn đoán bệnh
+                  {tr('Chẩn đoán', 'Diagnosis')}
                 </label>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-800">
                   {selectedPrescription.diagnosis}
@@ -982,7 +1015,7 @@ function Dashboard() {
 
               <div>
                 <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                  Đơn thuốc & Liều dùng
+                  {tr('Đơn thuốc & liều dùng', 'Prescription & dosage')}
                 </label>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-800 whitespace-pre-wrap">
                   {selectedPrescription.medicines}
@@ -992,7 +1025,7 @@ function Dashboard() {
               {selectedPrescription.aiSummary && (
                 <div className="mt-4">
                   <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-sky-600">
-                    <Sparkles className="mr-1.5 inline h-3.5 w-3.5" /> Tóm tắt Bệnh án (Bởi AI)
+                    <Sparkles className="mr-1.5 inline h-3.5 w-3.5" /> {tr('Tóm tắt bệnh án (bởi AI)', 'Medical record summary (AI)')}
                   </label>
                   <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm font-medium text-sky-900 whitespace-pre-wrap">
                     {selectedPrescription.aiSummary}
@@ -1005,7 +1038,7 @@ function Dashboard() {
                   onClick={() => setSelectedPrescription(null)}
                   className="w-full rounded-full bg-slate-900 py-3.5 text-sm font-bold text-white shadow-lg transition hover:bg-slate-800"
                 >
-                  Đóng
+                  {tr('Đóng', 'Close')}
                 </button>
               </div>
             </div>
@@ -1019,8 +1052,8 @@ function Dashboard() {
           <div className="w-full max-w-sm animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)] rounded-[2rem] bg-white p-6 shadow-2xl">
             <div className="mb-4 flex items-start justify-between">
               <div>
-                <h3 className="text-lg font-black tracking-tight text-slate-900">Đánh giá Bác sĩ</h3>
-                <p className="text-xs font-medium text-slate-500">Bác sĩ {ratingModal.doctorName}</p>
+                <h3 className="text-lg font-black tracking-tight text-slate-900">{tr('Đánh giá bác sĩ', 'Rate doctor')}</h3>
+                <p className="text-xs font-medium text-slate-500">{tr('Bác sĩ', 'Doctor')} {ratingModal.doctorName}</p>
               </div>
               <button onClick={() => setRatingModal(null)} className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200">
                 <X className="h-4 w-4" />
@@ -1040,13 +1073,13 @@ function Dashboard() {
                 ))}
               </div>
               <div>
-                <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Lời nhận xét</label>
+                <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">{tr('Lời nhận xét', 'Comment')}</label>
                 <textarea
                   required
                   rows={3}
                   value={ratingComment}
                   onChange={e => setRatingComment(e.target.value)}
-                  placeholder="Bác sĩ tư vấn nhiệt tình..."
+                  placeholder={tr('Bác sĩ tư vấn nhiệt tình...', 'The doctor was attentive and helpful...')}
                   className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm focus:border-sky-500 focus:outline-none"
                 />
               </div>
@@ -1055,7 +1088,7 @@ function Dashboard() {
                 disabled={ratingLoading}
                 className="w-full rounded-full bg-slate-900 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:opacity-60"
               >
-                {ratingLoading ? 'Đang gửi...' : 'Gửi Đánh Giá'}
+                {ratingLoading ? tr('Đang gửi...', 'Submitting...') : tr('Gửi đánh giá', 'Submit review')}
               </button>
             </form>
           </div>
@@ -1067,27 +1100,27 @@ function Dashboard() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-[2rem] bg-white p-8 shadow-2xl animate-in fade-in zoom-in-95">
             <div className="mb-6 flex items-start justify-between">
-              <h3 className="text-2xl font-black tracking-tight text-slate-900">Hồ sơ Y tế Của tôi</h3>
+              <h3 className="text-2xl font-black tracking-tight text-slate-900">{tr('Hồ sơ y tế của tôi', 'My medical profile')}</h3>
               <button onClick={() => setShowProfileModal(false)} className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 hover:bg-slate-200">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-bold text-slate-700">Nhóm máu</label>
-                <input type="text" value={profileForm.bloodType} onChange={e => setProfileForm({ ...profileForm, bloodType: e.target.value })} className="w-full rounded-xl border px-4 py-2" placeholder="Ví dụ: O+, A-" />
+                <label className="mb-1 block text-sm font-bold text-slate-700">{tr('Nhóm máu', 'Blood type')}</label>
+                <input type="text" value={profileForm.bloodType} onChange={e => setProfileForm({ ...profileForm, bloodType: e.target.value })} className="w-full rounded-xl border px-4 py-2" placeholder={tr('Ví dụ: O+, A-', 'Example: O+, A-')} />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-bold text-slate-700">Tiền sử bệnh</label>
-                <textarea value={profileForm.medicalHistory} onChange={e => setProfileForm({ ...profileForm, medicalHistory: e.target.value })} className="w-full rounded-xl border px-4 py-2 h-24" placeholder="Các bệnh từng mắc..." />
+                <label className="mb-1 block text-sm font-bold text-slate-700">{tr('Tiền sử bệnh', 'Medical history')}</label>
+                <textarea value={profileForm.medicalHistory} onChange={e => setProfileForm({ ...profileForm, medicalHistory: e.target.value })} className="w-full rounded-xl border px-4 py-2 h-24" placeholder={tr('Các bệnh từng mắc...', 'Previous medical conditions...')} />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-bold text-slate-700">Dị ứng thuốc</label>
-                <textarea value={profileForm.allergies} onChange={e => setProfileForm({ ...profileForm, allergies: e.target.value })} className="w-full rounded-xl border px-4 py-2 h-24" placeholder="Liệt kê dị ứng nếu có..." />
+                <label className="mb-1 block text-sm font-bold text-slate-700">{tr('Dị ứng thuốc', 'Medication allergies')}</label>
+                <textarea value={profileForm.allergies} onChange={e => setProfileForm({ ...profileForm, allergies: e.target.value })} className="w-full rounded-xl border px-4 py-2 h-24" placeholder={tr('Liệt kê dị ứng nếu có...', 'List any known allergies...')} />
               </div>
             </div>
             <button onClick={savePatientProfile} disabled={profileSaving} className="mt-6 w-full rounded-full bg-sky-600 py-3 font-bold text-white hover:bg-sky-700 disabled:opacity-50">
-              {profileSaving ? 'Đang lưu...' : 'Lưu hồ sơ'}
+              {profileSaving ? tr('Đang lưu...', 'Saving...') : tr('Lưu hồ sơ', 'Save profile')}
             </button>
           </div>
         </div>
@@ -1098,27 +1131,27 @@ function Dashboard() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-[2rem] bg-white p-8 shadow-2xl animate-in fade-in zoom-in-95">
             <div className="mb-6 flex items-start justify-between">
-              <h3 className="text-2xl font-black tracking-tight text-slate-900">Hồ sơ Chuyên môn</h3>
+              <h3 className="text-2xl font-black tracking-tight text-slate-900">{tr('Hồ sơ chuyên môn', 'Professional profile')}</h3>
               <button onClick={() => setShowDoctorProfileModal(false)} className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 hover:bg-slate-200">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-bold text-slate-700">Chuyên khoa</label>
-                <input type="text" value={doctorProfileForm.specialty} onChange={e => setDoctorProfileForm({ ...doctorProfileForm, specialty: e.target.value })} className="w-full rounded-xl border px-4 py-2" placeholder="Ví dụ: Tim mạch, Đa khoa" />
+                <label className="mb-1 block text-sm font-bold text-slate-700">{tr('Chuyên khoa', 'Specialty')}</label>
+                <input type="text" value={doctorProfileForm.specialty} onChange={e => setDoctorProfileForm({ ...doctorProfileForm, specialty: e.target.value })} className="w-full rounded-xl border px-4 py-2" placeholder={tr('Ví dụ: Tim mạch, Đa khoa', 'Example: Cardiology, General medicine')} />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-bold text-slate-700">Kinh nghiệm (năm)</label>
+                <label className="mb-1 block text-sm font-bold text-slate-700">{tr('Kinh nghiệm (năm)', 'Experience (years)')}</label>
                 <input type="number" value={doctorProfileForm.experienceYears} onChange={e => setDoctorProfileForm({ ...doctorProfileForm, experienceYears: Number(e.target.value) })} className="w-full rounded-xl border px-4 py-2" min={0} />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-bold text-slate-700">Tiểu sử & Kinh nghiệm</label>
-                <textarea value={doctorProfileForm.bio} onChange={e => setDoctorProfileForm({ ...doctorProfileForm, bio: e.target.value })} className="w-full rounded-xl border px-4 py-2 h-32" placeholder="Giới thiệu bản thân, nơi công tác..." />
+                <label className="mb-1 block text-sm font-bold text-slate-700">{tr('Tiểu sử & kinh nghiệm', 'Biography & experience')}</label>
+                <textarea value={doctorProfileForm.bio} onChange={e => setDoctorProfileForm({ ...doctorProfileForm, bio: e.target.value })} className="w-full rounded-xl border px-4 py-2 h-32" placeholder={tr('Giới thiệu bản thân, nơi công tác...', 'Introduce your background and workplace...')} />
               </div>
             </div>
             <button onClick={saveDoctorProfile} disabled={doctorProfileSaving} className="mt-6 w-full rounded-full bg-sky-600 py-3 font-bold text-white hover:bg-sky-700 disabled:opacity-50">
-              {doctorProfileSaving ? 'Đang gửi...' : 'Lưu và Gửi Admin duyệt'}
+              {doctorProfileSaving ? tr('Đang gửi...', 'Submitting...') : tr('Lưu và gửi quản trị viên duyệt', 'Save and submit for approval')}
             </button>
           </div>
         </div>
@@ -1130,8 +1163,8 @@ function Dashboard() {
           <div className="w-full max-w-lg rounded-[2rem] bg-white p-8 shadow-2xl animate-in fade-in zoom-in-95">
             <div className="mb-6 flex items-start justify-between">
               <div>
-                <h3 className="text-2xl font-black tracking-tight text-slate-900">Thêm Nhắc uống thuốc</h3>
-                <p className="text-xs text-slate-500 mt-1">Chọn đơn thuốc từ lịch sử khám của bạn</p>
+                <h3 className="text-2xl font-black tracking-tight text-slate-900">{tr('Thêm nhắc uống thuốc', 'Add medication reminder')}</h3>
+                <p className="text-xs text-slate-500 mt-1">{tr('Chọn đơn thuốc từ lịch sử khám của bạn', 'Select a prescription from your consultation history')}</p>
               </div>
               <button onClick={() => setShowReminderModal(false)} className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 hover:bg-slate-200">
                 <X className="h-4 w-4" />
@@ -1139,11 +1172,11 @@ function Dashboard() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Chọn đơn thuốc</label>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">{tr('Chọn đơn thuốc', 'Select prescription')}</label>
                 {allPrescriptions.length === 0 ? (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 font-medium">
                     <AlertTriangle className="inline h-4 w-4 mr-1.5" />
-                    Bạn chưa có đơn thuốc nào. Vui lòng hoàn tất ít nhất một ca khám trước.
+                    {tr('Bạn chưa có đơn thuốc nào. Vui lòng hoàn tất ít nhất một ca khám trước.', 'You do not have any prescriptions yet. Complete at least one consultation first.')}
                   </div>
                 ) : (
                   <select
@@ -1159,7 +1192,7 @@ function Dashboard() {
                     }}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
                   >
-                    <option value={0}>— Chọn đơn thuốc —</option>
+                    <option value={0}>— {tr('Chọn đơn thuốc', 'Select prescription')} —</option>
                     {allPrescriptions.map(p => (
                       <option key={p.id} value={p.id}>
                         #{p.id} — {p.diagnosis.substring(0, 40)}{p.doctorName ? ` (BS. ${p.doctorName})` : ''}
@@ -1172,22 +1205,22 @@ function Dashboard() {
                 const selected = allPrescriptions.find(p => p.id === reminderForm.prescriptionId);
                 return selected ? (
                   <div className="rounded-xl border border-violet-100 bg-violet-50 p-3 text-xs text-violet-800">
-                    <p className="font-bold">Chẩn đoán: {selected.diagnosis}</p>
-                    <p className="mt-1 text-violet-600">Thuốc: {selected.medicines}</p>
+                    <p className="font-bold">{tr('Chẩn đoán', 'Diagnosis')}: {selected.diagnosis}</p>
+                    <p className="mt-1 text-violet-600">{tr('Thuốc', 'Medication')}: {selected.medicines}</p>
                   </div>
                 ) : null;
               })()}
               <div>
-                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Tên thuốc cần nhắc</label>
-                <input type="text" value={reminderForm.medicineName} onChange={e => setReminderForm({ ...reminderForm, medicineName: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100" placeholder="Ví dụ: Paracetamol 500mg" />
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">{tr('Tên thuốc cần nhắc', 'Medication name')}</label>
+                <input type="text" value={reminderForm.medicineName} onChange={e => setReminderForm({ ...reminderForm, medicineName: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100" placeholder={tr('Ví dụ: Paracetamol 500mg', 'Example: Paracetamol 500mg')} />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Giờ uống</label>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">{tr('Giờ uống', 'Reminder time')}</label>
                 <input type="time" value={reminderForm.reminderTime} onChange={e => setReminderForm({ ...reminderForm, reminderTime: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100" />
               </div>
             </div>
             <button onClick={addReminder} disabled={reminderSaving || allPrescriptions.length === 0} className="mt-6 w-full rounded-full bg-gradient-to-r from-violet-600 to-purple-500 py-3.5 font-bold text-white shadow-lg shadow-violet-600/25 hover:from-violet-700 hover:to-purple-600 disabled:opacity-50 transition active:scale-[0.98]">
-              {reminderSaving ? 'Đang lưu...' : '💊 Thêm nhắc nhở'}
+              {reminderSaving ? tr('Đang lưu...', 'Saving...') : `💊 ${tr('Thêm nhắc nhở', 'Add reminder')}`}
             </button>
           </div>
         </div>
@@ -1202,8 +1235,8 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-700">Appointment flow</p>
-              <h2 className="mt-2 text-2xl font-black tracking-tight">Phân bố trạng thái lịch hẹn</h2>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-700">{tr('Luồng lịch hẹn', 'Appointment flow')}</p>
+              <h2 className="mt-2 text-2xl font-black tracking-tight">{tr('Phân bố trạng thái lịch hẹn', 'Appointment status distribution')}</h2>
             </div>
             <ChartColumn className="h-6 w-6 text-sky-600" />
           </div>
@@ -1213,7 +1246,7 @@ function Dashboard() {
               return (
                 <div key={item.status}>
                   <div className="mb-1 flex items-center justify-between text-sm font-medium text-slate-600">
-                    <span>{item.status}</span>
+                    <span>{statusLabel(item.status)}</span>
                     <span>{item._count.status}</span>
                   </div>
                   <div className="h-3 rounded-full bg-slate-100">
@@ -1228,7 +1261,7 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <Stethoscope className="h-4 w-4" />
-            Top doctors
+            {tr('Bác sĩ nổi bật', 'Top doctors')}
           </div>
           <div className="mt-4 space-y-3">
             {data.topDoctors.map((doctor) => (
@@ -1236,16 +1269,16 @@ function Dashboard() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="font-bold text-slate-900">{formatDoctorName(doctor.name)}</p>
-                    <p className="text-sm text-slate-600">{doctor.specialty}</p>
+                    <p className="text-sm text-slate-600">{localizeSpecialty(doctor.specialty)}</p>
                   </div>
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${doctor.isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
-                    {doctor.isOnline ? 'Online' : 'Offline'}
+                    {doctor.isOnline ? tr('Trực tuyến', 'Online') : tr('Ngoại tuyến', 'Offline')}
                   </span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-600">
                   <span>{doctor.rating.toFixed(1)} ★</span>
-                  <span>{doctor.patientCount.toLocaleString('vi-VN')} bệnh nhân</span>
-                  <span>{doctor.yearsExp} năm kinh nghiệm</span>
+                  <span>{doctor.patientCount.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')} {tr('bệnh nhân', 'patients')}</span>
+                  <span>{doctor.yearsExp} {tr('năm kinh nghiệm', 'years of experience')}</span>
                 </div>
               </div>
             ))}
@@ -1255,29 +1288,29 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-4">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-amber-600">
             <CheckCircle2 className="h-4 w-4" />
-            Phê duyệt hồ sơ bác sĩ
+            {tr('Phê duyệt hồ sơ bác sĩ', 'Doctor profile approvals')}
           </div>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
               <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Bác sĩ</th>
-                  <th className="px-4 py-3">Chuyên khoa</th>
-                  <th className="px-4 py-3">Kinh nghiệm</th>
-                  <th className="px-4 py-3 text-right">Hành động</th>
+                  <th className="px-4 py-3">{tr('Bác sĩ', 'Doctor')}</th>
+                  <th className="px-4 py-3">{tr('Chuyên khoa', 'Specialty')}</th>
+                  <th className="px-4 py-3">{tr('Kinh nghiệm', 'Experience')}</th>
+                  <th className="px-4 py-3 text-right">{tr('Hành động', 'Actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {pendingDoctors.length === 0 ? (
-                  <tr><td colSpan={4} className="py-4 text-center text-slate-400">Không có hồ sơ nào đang chờ duyệt</td></tr>
+                  <tr><td colSpan={4} className="py-4 text-center text-slate-400">{tr('Không có hồ sơ nào đang chờ duyệt', 'No profiles are awaiting approval')}</td></tr>
                 ) : pendingDoctors.map(doc => (
                   <tr key={doc.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-semibold text-slate-900">{doc.user.fullName}<br/><span className="text-xs font-normal text-slate-500">{doc.user.email}</span></td>
-                    <td className="px-4 py-3 text-sky-700 font-medium">{doc.specialty}</td>
-                    <td className="px-4 py-3">{doc.experienceYears} năm</td>
+                    <td className="px-4 py-3 text-sky-700 font-medium">{localizeSpecialty(doc.specialty)}</td>
+                    <td className="px-4 py-3">{doc.experienceYears} {tr('năm', 'years')}</td>
                     <td className="px-4 py-3 text-right flex items-center justify-end gap-2">
-                      <button onClick={() => approveDoctorProfile(doc.userId, 'APPROVED')} className="rounded-full bg-emerald-100 text-emerald-700 px-3 py-1 text-xs font-bold hover:bg-emerald-200">Phê duyệt</button>
-                      <button onClick={() => approveDoctorProfile(doc.userId, 'REJECTED')} className="rounded-full bg-rose-100 text-rose-700 px-3 py-1 text-xs font-bold hover:bg-rose-200">Từ chối</button>
+                      <button onClick={() => approveDoctorProfile(doc.userId, 'APPROVED')} className="rounded-full bg-emerald-100 text-emerald-700 px-3 py-1 text-xs font-bold hover:bg-emerald-200">{tr('Phê duyệt', 'Approve')}</button>
+                      <button onClick={() => approveDoctorProfile(doc.userId, 'REJECTED')} className="rounded-full bg-rose-100 text-rose-700 px-3 py-1 text-xs font-bold hover:bg-rose-200">{tr('Từ chối', 'Reject')}</button>
                     </td>
                   </tr>
                 ))}
@@ -1289,17 +1322,17 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-4">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <Users className="h-4 w-4" />
-            Quản lý Tài khoản (Users)
+            {tr('Quản lý tài khoản', 'Account management')}
           </div>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
               <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Họ tên</th>
+                  <th className="px-4 py-3">{tr('Họ tên', 'Full name')}</th>
                   <th className="px-4 py-3">Email</th>
-                  <th className="px-4 py-3">Vai trò</th>
-                  <th className="px-4 py-3">Trạng thái</th>
-                  <th className="px-4 py-3 text-right">Hành động</th>
+                  <th className="px-4 py-3">{tr('Vai trò', 'Role')}</th>
+                  <th className="px-4 py-3">{tr('Trạng thái', 'Status')}</th>
+                  <th className="px-4 py-3 text-right">{tr('Hành động', 'Actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1309,14 +1342,14 @@ function Dashboard() {
                     <td className="px-4 py-3">{user.email}</td>
                     <td className="px-4 py-3">
                       <span className={`rounded-full px-2 py-1 text-[10px] font-black tracking-wide ${user.role === 'DOCTOR' ? 'bg-sky-100 text-sky-700' : user.role === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {user.role}
+                        {roleName(user.role)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       {user.isActive ? (
-                        <span className="text-emerald-600 font-bold">Hoạt động</span>
+                        <span className="text-emerald-600 font-bold">{tr('Hoạt động', 'Active')}</span>
                       ) : (
-                        <span className="text-rose-600 font-bold">Bị khoá</span>
+                        <span className="text-rose-600 font-bold">{tr('Bị khóa', 'Locked')}</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -1325,7 +1358,7 @@ function Dashboard() {
                           onClick={() => toggleUserStatus(user.id, user.isActive)}
                           className={`rounded border px-3 py-1 text-xs font-semibold ${user.isActive ? 'border-rose-200 text-rose-600 hover:bg-rose-50' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'}`}
                         >
-                          {user.isActive ? 'Khoá' : 'Mở khoá'}
+                          {user.isActive ? tr('Khóa', 'Lock') : tr('Mở khóa', 'Unlock')}
                         </button>
                       )}
                     </td>
@@ -1339,22 +1372,22 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-4">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <Wallet className="h-4 w-4" />
-            Quản lý Hoá Đơn / Hoàn Tiền
+            {tr('Quản lý hóa đơn / hoàn tiền', 'Invoice / refund management')}
           </div>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
               <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Mã hoá đơn</th>
-                  <th className="px-4 py-3">Bệnh nhân</th>
-                  <th className="px-4 py-3">Số tiền</th>
-                  <th className="px-4 py-3">Trạng thái</th>
-                  <th className="px-4 py-3 text-right">Hành động</th>
+                  <th className="px-4 py-3">{tr('Mã hóa đơn', 'Invoice ID')}</th>
+                  <th className="px-4 py-3">{tr('Bệnh nhân', 'Patient')}</th>
+                  <th className="px-4 py-3">{tr('Số tiền', 'Amount')}</th>
+                  <th className="px-4 py-3">{tr('Trạng thái', 'Status')}</th>
+                  <th className="px-4 py-3 text-right">{tr('Hành động', 'Actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {invoices.length === 0 ? (
-                  <tr><td colSpan={5} className="py-4 text-center text-slate-400">Không có hoá đơn nào</td></tr>
+                  <tr><td colSpan={5} className="py-4 text-center text-slate-400">{tr('Không có hóa đơn nào', 'No invoices found')}</td></tr>
                 ) : invoices.map(inv => (
                   <tr key={inv.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-medium text-slate-900">#{inv.id}</td>
@@ -1366,7 +1399,7 @@ function Dashboard() {
                         inv.status === 'REFUNDED' ? 'bg-slate-100 text-slate-700' :
                         'bg-amber-100 text-amber-700'
                       }`}>
-                        {inv.status === 'PAID' ? 'ĐÃ THANH TOÁN' : inv.status === 'REFUNDED' ? 'ĐÃ HOÀN TIỀN' : 'CHỜ HOÀN TIỀN'}
+                        {statusLabel(inv.status)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -1375,7 +1408,7 @@ function Dashboard() {
                           onClick={() => handleRefund(inv.id)}
                           className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600 hover:bg-emerald-100"
                         >
-                          Duyệt hoàn tiền
+                          {tr('Duyệt hoàn tiền', 'Approve refund')}
                         </button>
                       )}
                     </td>
@@ -1389,17 +1422,17 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-4">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <CalendarDays className="h-4 w-4" />
-            Quản lý Lịch hẹn Gần đây
+            {tr('Quản lý lịch hẹn gần đây', 'Recent appointment management')}
           </div>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
               <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Bệnh nhân</th>
-                  <th className="px-4 py-3">Bác sĩ</th>
-                  <th className="px-4 py-3">Thời gian</th>
-                  <th className="px-4 py-3">Trạng thái</th>
-                  <th className="px-4 py-3 text-right">Hành động</th>
+                  <th className="px-4 py-3">{tr('Bệnh nhân', 'Patient')}</th>
+                  <th className="px-4 py-3">{tr('Bác sĩ', 'Doctor')}</th>
+                  <th className="px-4 py-3">{tr('Thời gian', 'Time')}</th>
+                  <th className="px-4 py-3">{tr('Trạng thái', 'Status')}</th>
+                  <th className="px-4 py-3 text-right">{tr('Hành động', 'Actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1407,7 +1440,7 @@ function Dashboard() {
                   <tr key={appt.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-medium text-slate-900">{appt.patient?.fullName}</td>
                     <td className="px-4 py-3">{appt.doctor?.fullName}</td>
-                    <td className="px-4 py-3">{formatDate(appt.appointmentDate)} {appt.startTime}</td>
+                    <td className="px-4 py-3">{formatDate(appt.appointmentDate, language)} {appt.startTime}</td>
                     <td className="px-4 py-3">
                       <span className={`rounded-full px-2 py-1 text-[10px] font-black tracking-wide ${
                         appt.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
@@ -1415,7 +1448,7 @@ function Dashboard() {
                         appt.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
                         'bg-sky-100 text-sky-700'
                       }`}>
-                        {appt.status}
+                        {statusLabel(appt.status)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -1424,7 +1457,7 @@ function Dashboard() {
                           onClick={() => updateAppointmentStatus(appt.id, 'CANCELLED')}
                           className="rounded border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
                         >
-                          Huỷ lịch
+                          {tr('Hủy lịch', 'Cancel')}
                         </button>
                       )}
                     </td>
@@ -1438,17 +1471,17 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <MessageSquare className="h-4 w-4" />
-            Recent messages
+            {tr('Tin nhắn gần đây', 'Recent messages')}
           </div>
           <div className="mt-4 space-y-3">
             {data.recentMessages.map((message) => (
               <div key={message.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-3 text-sm text-slate-600">
-                  <span>{message.sender?.fullName ?? '---'} · {message.sender?.role ?? '---'}</span>
-                  <span>{formatTime(message.createdAt)}</span>
+                  <span>{message.sender?.fullName ?? '---'} · {roleName(message.sender?.role)}</span>
+                  <span>{formatTime(message.createdAt, language)}</span>
                 </div>
                 <p className="mt-2 break-words text-sm font-medium text-slate-800 [overflow-wrap:anywhere]">
-                  {formatMessagePreview(message)}
+                  {formatMessagePreview(message, language)}
                 </p>
               </div>
             ))}
@@ -1464,7 +1497,7 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <Users className="h-4 w-4" />
-            Patient profile
+            {tr('Hồ sơ bệnh nhân', 'Patient profile')}
           </div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-4">
@@ -1477,22 +1510,22 @@ function Dashboard() {
               </div>
             </div>
             <button onClick={() => setShowProfileModal(true)} className="flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-100">
-              <Edit3 className="h-4 w-4" /> Cập nhật Hồ sơ y tế
+              <Edit3 className="h-4 w-4" /> {tr('Cập nhật hồ sơ y tế', 'Update medical profile')}
             </button>
           </div>
           {patientProfile && (
             <div className="mt-6 grid gap-4 sm:grid-cols-3">
               <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Nhóm máu</p>
-                <p className="mt-1 font-semibold text-slate-800">{patientProfile.bloodType || 'Chưa cập nhật'}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{tr('Nhóm máu', 'Blood type')}</p>
+                <p className="mt-1 font-semibold text-slate-800">{patientProfile.bloodType || tr('Chưa cập nhật', 'Not updated')}</p>
               </div>
               <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Tiền sử bệnh</p>
-                <p className="mt-1 font-semibold text-slate-800">{patientProfile.medicalHistory || 'Chưa cập nhật'}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{tr('Tiền sử bệnh', 'Medical history')}</p>
+                <p className="mt-1 font-semibold text-slate-800">{patientProfile.medicalHistory || tr('Chưa cập nhật', 'Not updated')}</p>
               </div>
               <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Dị ứng thuốc</p>
-                <p className="mt-1 font-semibold text-slate-800">{patientProfile.allergies || 'Chưa cập nhật'}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{tr('Dị ứng thuốc', 'Medication allergies')}</p>
+                <p className="mt-1 font-semibold text-slate-800">{patientProfile.allergies || tr('Chưa cập nhật', 'Not updated')}</p>
               </div>
             </div>
           )}
@@ -1503,15 +1536,15 @@ function Dashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-violet-600">
               <Pill className="h-4 w-4" />
-              Lịch nhắc uống thuốc
+              {tr('Lịch nhắc uống thuốc', 'Medication reminders')}
             </div>
             <button onClick={() => setShowReminderModal(true)} className="rounded-full bg-violet-600 px-4 py-2 text-xs font-bold text-white hover:bg-violet-700">
-              + Thêm nhắc nhở
+              + {tr('Thêm nhắc nhở', 'Add reminder')}
             </button>
           </div>
           <div className="mt-4 space-y-3">
             {reminders.length === 0 ? (
-              <p className="text-sm text-slate-500">Chưa có lịch nhắc thuốc nào.</p>
+              <p className="text-sm text-slate-500">{tr('Chưa có lịch nhắc thuốc nào.', 'No medication reminders yet.')}</p>
             ) : reminders.map(r => (
               <div key={r.id} className={`flex items-center justify-between rounded-2xl border p-4 ${r.isActive ? 'border-violet-200 bg-violet-50' : 'border-slate-200 bg-slate-50 opacity-60'}`}>
                 <div className="flex items-center gap-4">
@@ -1520,12 +1553,12 @@ function Dashboard() {
                   </div>
                   <div>
                     <h3 className="font-bold text-slate-900">{r.medicineName}</h3>
-                    <p className="text-xs text-slate-500">Giờ uống: <strong className="text-slate-800">{r.reminderTime}</strong></p>
+                    <p className="text-xs text-slate-500">{tr('Giờ uống', 'Time')}: <strong className="text-slate-800">{r.reminderTime}</strong></p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={() => toggleReminder(r.id)} className={`px-3 py-1.5 text-xs font-semibold rounded-full ${r.isActive ? 'bg-white text-violet-700' : 'bg-slate-200 text-slate-700'}`}>
-                    {r.isActive ? 'Đang bật' : 'Đã tắt'}
+                    {r.isActive ? tr('Đang bật', 'Enabled') : tr('Đã tắt', 'Disabled')}
                   </button>
                   <button onClick={() => deleteReminder(r.id)} className="grid h-8 w-8 place-items-center rounded-full text-rose-500 hover:bg-rose-100">
                     <Trash2 className="h-4 w-4" />
@@ -1538,33 +1571,33 @@ function Dashboard() {
 
         <section className="rounded-[2rem] border border-emerald-100 bg-emerald-50 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">
-            Số dư ví OS Telehealth
+            {tr('Số dư ví OS TeleHealth', 'OS TeleHealth wallet balance')}
           </div>
           <div className="mt-4">
             <h2 className="text-3xl font-black text-emerald-600">
-              {wallet ? wallet.balance.toLocaleString('vi-VN') + ' VNĐ' : 'Đang tải...'}
+              {wallet ? wallet.balance.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US') + ' VNĐ' : tr('Đang tải...', 'Loading...')}
             </h2>
-            <p className="text-sm text-emerald-600/80 mt-1">Dùng để thanh toán phí khám trực tuyến</p>
+            <p className="text-sm text-emerald-600/80 mt-1">{tr('Dùng để thanh toán phí khám trực tuyến', 'Used to pay online consultation fees')}</p>
           </div>
         </section>
 
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
-            Lịch sử giao dịch
+            {tr('Lịch sử giao dịch', 'Transaction history')}
           </div>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
               <thead>
                 <tr className="border-b border-slate-100 text-xs font-bold uppercase tracking-wider text-slate-400">
-                  <th className="px-4 py-3">Mã hoá đơn</th>
-                  <th className="px-4 py-3">Số tiền</th>
-                  <th className="px-4 py-3">Bác sĩ</th>
-                  <th className="px-4 py-3">Trạng thái</th>
+                  <th className="px-4 py-3">{tr('Mã hóa đơn', 'Invoice ID')}</th>
+                  <th className="px-4 py-3">{tr('Số tiền', 'Amount')}</th>
+                  <th className="px-4 py-3">{tr('Bác sĩ', 'Doctor')}</th>
+                  <th className="px-4 py-3">{tr('Trạng thái', 'Status')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {invoices.length === 0 ? (
-                  <tr><td colSpan={4} className="py-4 text-center text-slate-400">Chưa có giao dịch nào</td></tr>
+                  <tr><td colSpan={4} className="py-4 text-center text-slate-400">{tr('Chưa có giao dịch nào', 'No transactions yet')}</td></tr>
                 ) : invoices.map(inv => (
                   <tr key={inv.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-medium text-slate-900">#{inv.id}</td>
@@ -1576,7 +1609,7 @@ function Dashboard() {
                         inv.status === 'REFUNDED' ? 'bg-slate-100 text-slate-700' :
                         'bg-amber-100 text-amber-700'
                       }`}>
-                        {inv.status === 'PAID' ? 'ĐÃ THANH TOÁN' : inv.status === 'REFUNDED' ? 'ĐÃ HOÀN TIỀN' : 'CHỜ HOÀN TIỀN'}
+                        {statusLabel(inv.status)}
                       </span>
                     </td>
                   </tr>
@@ -1590,7 +1623,7 @@ function Dashboard() {
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
               <CalendarDays className="h-4 w-4" />
-              Lịch hẹn sắp tới
+              {tr('Lịch hẹn sắp tới', 'Upcoming appointments')}
             </div>
             {data.upcomingAppointments.filter(a => a.status !== 'CANCELLED').length > 0 && (
               <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-black text-sky-700">{data.upcomingAppointments.filter(a => a.status !== 'CANCELLED').length}</span>
@@ -1598,19 +1631,19 @@ function Dashboard() {
           </div>
           <div className="mt-4 space-y-3">
             {data.upcomingAppointments.filter(a => a.status !== 'CANCELLED').length === 0 ? (
-              <p className="text-center py-6 text-sm text-slate-400">Chưa có lịch hẹn sắp tới</p>
+              <p className="text-center py-6 text-sm text-slate-400">{tr('Chưa có lịch hẹn sắp tới', 'No upcoming appointments')}</p>
             ) : data.upcomingAppointments.filter(a => a.status !== 'CANCELLED').map((appointment) => (
               <div key={appointment.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="font-bold text-slate-900">{formatDoctorName(appointment.doctor?.fullName)}</p>
-                    <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate)} · {appointment.startTime} – {appointment.endTime}</p>
+                    <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate, language)} · {appointment.startTime} – {appointment.endTime}</p>
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${
                     appointment.status === 'CONFIRMED' || appointment.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' :
                     appointment.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
                     'bg-slate-100 text-slate-600'
-                  }`}>{appointment.status === 'PENDING' ? 'CHỜ DUYỆT' : appointment.status === 'CONFIRMED' ? 'ĐÃ XÁC NHẬN' : appointment.status}</span>
+                  }`}>{statusLabel(appointment.status)}</span>
                 </div>
                 <div className="mt-3 flex items-center gap-2">
                   {(appointment.status === 'CONFIRMED' || appointment.status === 'ACCEPTED') ? (
@@ -1618,11 +1651,11 @@ function Dashboard() {
                       onClick={() => navigate(`/clinic?doc=${appointment.doctorId ?? 1}&appointmentId=${appointment.id}`)}
                       className="flex-1 rounded-full bg-sky-600 px-4 py-2 text-center text-sm font-bold text-white transition hover:bg-sky-700"
                     >
-                      Vào phòng khám
+                      {tr('Vào phòng khám', 'Enter consultation room')}
                     </button>
                   ) : (
                     <div className="flex-1 rounded-full bg-amber-50 border border-amber-100 py-2 text-center text-xs font-semibold text-amber-600">
-                      ⏳ Đang chờ bác sĩ xác nhận lịch hẹn
+                      ⏳ {tr('Đang chờ bác sĩ xác nhận lịch hẹn', 'Waiting for doctor confirmation')}
                     </div>
                   )}
                   {(appointment.status === 'PENDING' || appointment.status === 'CONFIRMED') && (
@@ -1631,7 +1664,7 @@ function Dashboard() {
                       disabled={cancellingId === appointment.id}
                       className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
                     >
-                      {cancellingId === appointment.id ? '...' : 'Hủy'}
+                      {cancellingId === appointment.id ? '...' : tr('Hủy', 'Cancel')}
                     </button>
                   )}
                 </div>
@@ -1645,7 +1678,7 @@ function Dashboard() {
           <section className="rounded-[2rem] border border-rose-100 bg-rose-50/50 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.04)]">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-rose-600">
               <XCircle className="h-4 w-4" />
-              Lịch đã hủy &amp; Trạng thái hoàn tiền
+              {tr('Lịch đã hủy & trạng thái hoàn tiền', 'Cancelled appointments & refund status')}
             </div>
             <div className="mt-4 space-y-3">
               {data.upcomingAppointments.filter(a => a.status === 'CANCELLED').map((appointment) => {
@@ -1655,9 +1688,9 @@ function Dashboard() {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="font-bold text-slate-900">{formatDoctorName(appointment.doctor?.fullName)}</p>
-                        <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate)} · {appointment.startTime} – {appointment.endTime}</p>
+                        <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate, language)} · {appointment.startTime} – {appointment.endTime}</p>
                       </div>
-                      <span className="rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide bg-rose-100 text-rose-700">ĐÃ HỦY</span>
+                      <span className="rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide bg-rose-100 text-rose-700">{statusLabel('CANCELLED')}</span>
                     </div>
                     {relatedInvoice && (
                       <div className={`mt-3 flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${
@@ -1665,9 +1698,9 @@ function Dashboard() {
                         'bg-amber-50 text-amber-700 border border-amber-100'
                       }`}>
                         {relatedInvoice.status === 'REFUNDED' ? (
-                          <><span>✅</span> Đã hoàn tiền <strong>{relatedInvoice.amount.toLocaleString('vi-VN')}đ</strong> vào ví của bạn.</>
+                          <><span>✅</span> {tr('Đã hoàn tiền', 'Refunded')} <strong>{relatedInvoice.amount.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')}đ</strong> {tr('vào ví của bạn.', 'to your wallet.')}</>
                         ) : (
-                          <><span>⏳</span> Đang xử lý hoàn tiền <strong>{relatedInvoice.amount.toLocaleString('vi-VN')}đ</strong> — Admin sẽ duyệt sớm.</>
+                          <><span>⏳</span> {tr('Đang xử lý hoàn tiền', 'Processing refund')} <strong>{relatedInvoice.amount.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')}đ</strong> — {tr('quản trị viên sẽ duyệt sớm.', 'an administrator will review it soon.')}</>
                         )}
                       </div>
                     )}
@@ -1681,26 +1714,26 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <CheckCircle2 className="h-4 w-4" />
-            Lịch sử khám
+            {tr('Lịch sử khám', 'Consultation history')}
           </div>
           <div className="mt-4 space-y-3">
             {data.completedAppointments.length === 0 ? (
-              <p className="text-center py-6 text-sm text-slate-400">Chưa có lịch sử khám bệnh</p>
+              <p className="text-center py-6 text-sm text-slate-400">{tr('Chưa có lịch sử khám bệnh', 'No consultation history')}</p>
             ) : data.completedAppointments.map((appointment) => (
               <div key={appointment.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="font-bold text-slate-900">{formatDoctorName(appointment.doctor?.fullName)}</p>
-                    <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate)} · {appointment.startTime} – {appointment.endTime}</p>
+                    <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate, language)} · {appointment.startTime} – {appointment.endTime}</p>
                   </div>
-                  <span className="rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide bg-slate-200 text-slate-700">ĐÃ HOÀN TẤT</span>
+                  <span className="rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide bg-slate-200 text-slate-700">{statusLabel('COMPLETED')}</span>
                 </div>
                 {appointment.prescriptions && appointment.prescriptions.length > 0 && (
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
                     <button
                       onClick={() => setSelectedPrescription({
                         appointmentId: appointment.id,
-                        date: formatDate(appointment.appointmentDate),
+                        date: formatDate(appointment.appointmentDate, language),
                         doctorName: formatDoctorName(appointment.doctor?.fullName),
                         diagnosis: appointment.prescriptions![0].diagnosis,
                         medicines: appointment.prescriptions![0].medicines,
@@ -1710,19 +1743,19 @@ function Dashboard() {
                       className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-bold text-white transition hover:bg-slate-800"
                     >
                       <FileText className="h-3 w-3" />
-                      Xem Hồ sơ & Đơn thuốc
+                      {tr('Xem hồ sơ & đơn thuốc', 'View record & prescription')}
                     </button>
                     {!appointment.review && (
                       <button
                         onClick={() => setRatingModal({ appointmentId: appointment.id, doctorName: formatDoctorName(appointment.doctor?.fullName) })}
                         className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-700 transition hover:bg-amber-100"
                       >
-                        Đánh giá Bác sĩ
+                        {tr('Đánh giá bác sĩ', 'Rate doctor')}
                       </button>
                     )}
                     {appointment.review && (
                       <div className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 border border-emerald-100">
-                        Đã đánh giá: {appointment.review.rating} ★
+                        {tr('Đã đánh giá', 'Rated')}: {appointment.review.rating} ★
                       </div>
                     )}
                   </div>
@@ -1735,7 +1768,7 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <HeartPulse className="h-4 w-4" />
-            Vital signs
+            {tr('Chỉ số sinh tồn', 'Vital signs')}
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {data.vitals.map((item) => (
@@ -1750,17 +1783,17 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <MessageSquare className="h-4 w-4" />
-            Messages
+            {tr('Tin nhắn', 'Messages')}
           </div>
           <div className="mt-4 space-y-3">
             {data.messages.map((message) => (
               <div key={message.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-center justify-between text-sm text-slate-600">
                   <span>{message.sender?.fullName ?? '---'}</span>
-                  <span>{formatTime(message.createdAt)}</span>
+                  <span>{formatTime(message.createdAt, language)}</span>
                 </div>
                 <p className="mt-2 break-words text-sm font-medium text-slate-800 [overflow-wrap:anywhere]">
-                  {formatMessagePreview(message)}
+                  {formatMessagePreview(message, language)}
                 </p>
               </div>
             ))}
@@ -1782,7 +1815,7 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700 mb-4">
             <Stethoscope className="h-4 w-4" />
-            Doctor Profile
+            {tr('Hồ sơ bác sĩ', 'Doctor profile')}
           </div>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex items-center gap-4">
@@ -1791,26 +1824,26 @@ function Dashboard() {
               </div>
               <div>
                 <h2 className="text-2xl font-black tracking-tight">{data.doctor.fullName}</h2>
-                <p className="font-semibold text-sky-600">{data.profile?.specialty || 'Chưa cập nhật chuyên khoa'}</p>
-                <p className="text-sm text-slate-500">{data.profile?.experienceYears || 0} năm kinh nghiệm</p>
+                <p className="font-semibold text-sky-600">{data.profile?.specialty ? localizeSpecialty(data.profile.specialty) : tr('Chưa cập nhật chuyên khoa', 'Specialty not updated')}</p>
+                <p className="text-sm text-slate-500">{data.profile?.experienceYears || 0} {tr('năm kinh nghiệm', 'years of experience')}</p>
               </div>
             </div>
             <div className="text-right">
               {data.profile?.status === 'PENDING' && (
                 <span className="mb-2 inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700 uppercase">
-                  ⏳ Đang chờ Admin duyệt
+                  ⏳ {tr('Đang chờ quản trị viên duyệt', 'Awaiting administrator approval')}
                 </span>
               )}
               <div>
                 <button onClick={() => setShowDoctorProfileModal(true)} className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
-                  <Edit3 className="h-4 w-4" /> Cập nhật hồ sơ
+                  <Edit3 className="h-4 w-4" /> {tr('Cập nhật hồ sơ', 'Update profile')}
                 </button>
               </div>
             </div>
           </div>
           {data.profile?.bio && (
             <div className="mt-6 rounded-2xl bg-slate-50 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Giới thiệu</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{tr('Giới thiệu', 'About')}</p>
               <p className="mt-1 text-sm font-medium text-slate-700 leading-relaxed whitespace-pre-wrap">{data.profile.bio}</p>
             </div>
           )}
@@ -1820,10 +1853,10 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700 mb-4">
             <CalendarDays className="h-4 w-4" />
-            Cấu hình lịch làm việc
+            {tr('Cấu hình lịch làm việc', 'Work schedule settings')}
           </div>
           <div className="mb-4">
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Chọn ngày:</label>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">{tr('Chọn ngày', 'Select date')}:</label>
             <input 
               type="date" 
               value={selectedScheduleDate}
@@ -1831,7 +1864,7 @@ function Dashboard() {
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-800 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
               min={new Date().toISOString().split('T')[0]}
             />
-            <p className="mt-2 text-xs text-slate-500">Bấm vào các khung giờ dưới đây để đánh dấu giờ rảnh (Xanh) hoặc bận (Xám).</p>
+            <p className="mt-2 text-xs text-slate-500">{tr('Bấm vào các khung giờ để đánh dấu giờ rảnh (xanh) hoặc bận (xám).', 'Select a time slot to mark it available (green) or unavailable (gray).')}</p>
           </div>
           
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
@@ -1855,7 +1888,7 @@ function Dashboard() {
                   }`}
                 >
                   {slot}
-                  {isBooked && <span className="block text-[9px] mt-1 text-rose-500 font-black">ĐÃ ĐẶT</span>}
+                  {isBooked && <span className="block text-[9px] mt-1 text-rose-500 font-black">{tr('Đã đặt', 'Booked')}</span>}
                 </button>
               );
             })}
@@ -1864,16 +1897,16 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <Stethoscope className="h-4 w-4" />
-            Doctor profile
+            {tr('Hồ sơ bác sĩ', 'Doctor profile')}
           </div>
           <div className="mt-4 space-y-2">
             <h2 className="text-2xl font-black tracking-tight">{formatDoctorName(data.doctor.fullName)}</h2>
             <p className="text-slate-600">{data.doctor.email}</p>
-            <p className="text-sm font-semibold text-slate-800">{data.profile?.specialty ?? '---'}</p>
+            <p className="text-sm font-semibold text-slate-800">{localizeSpecialty(data.profile?.specialty)}</p>
             <p className="text-sm text-slate-600">{data.profile?.bio ?? '---'}</p>
             <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-1.5 text-sm font-bold text-emerald-700 border border-emerald-100">
               <Banknote className="h-4 w-4" />
-              Tổng doanh thu: {(data.stats.completedAppointments * 100000).toLocaleString('vi-VN')} VNĐ
+              {tr('Tổng doanh thu', 'Total revenue')}: {(data.stats.completedAppointments * 100000).toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')} VNĐ
             </div>
           </div>
         </section>
@@ -1883,25 +1916,25 @@ function Dashboard() {
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
               <CalendarDays className="h-4 w-4" />
-              Lịch hẹn khám bệnh từ người dùng ({appointmentsList.length})
+              {tr('Lịch hẹn từ bệnh nhân', 'Patient appointments')} ({appointmentsList.length})
             </div>
           </div>
           <div className="mt-4 space-y-3">
             {appointmentsList.length === 0 ? (
-              <p className="text-center py-6 text-sm text-slate-400">Chưa có lịch hẹn khám nào từ bệnh nhân</p>
+              <p className="text-center py-6 text-sm text-slate-400">{tr('Chưa có lịch hẹn nào từ bệnh nhân', 'No patient appointments')}</p>
             ) : appointmentsList.map((appointment) => (
               <div key={appointment.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <p className="font-bold text-slate-900">Bệnh nhân: {appointment.patient?.fullName ?? 'Bệnh nhân'}</p>
-                    <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate)} · {appointment.startTime} – {appointment.endTime}</p>
+                    <p className="font-bold text-slate-900">{tr('Bệnh nhân', 'Patient')}: {appointment.patient?.fullName ?? tr('Bệnh nhân', 'Patient')}</p>
+                    <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate, language)} · {appointment.startTime} – {appointment.endTime}</p>
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${
                     appointment.status === 'CONFIRMED' || appointment.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' :
                     appointment.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
                     appointment.status === 'CANCELLED' ? 'bg-rose-100 text-rose-700' :
                     'bg-slate-100 text-slate-600'
-                  }`}>{appointment.status === 'CANCELLED' ? 'ĐÃ HỦY' : appointment.status === 'PENDING' ? 'CHỜ DUYỆT' : appointment.status === 'CONFIRMED' ? 'ĐÃ DUYỆT' : appointment.status}</span>
+                  }`}>{statusLabel(appointment.status)}</span>
                 </div>
 
                 {/* Nút thao tác dành cho Bác sĩ */}
@@ -1914,7 +1947,7 @@ function Dashboard() {
                         className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full bg-emerald-600 py-2 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60"
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" />
-                        Duyệt lịch
+                        {tr('Duyệt lịch', 'Approve')}
                       </button>
                       <button
                         onClick={() => updateAppointmentStatus(appointment.id, 'CANCELLED')}
@@ -1922,7 +1955,7 @@ function Dashboard() {
                         className="inline-flex items-center justify-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
                       >
                         <XCircle className="h-3.5 w-3.5" />
-                        Từ chối
+                        {tr('Từ chối', 'Reject')}
                       </button>
                     </>
                   )}
@@ -1932,13 +1965,13 @@ function Dashboard() {
                       onClick={() => navigate(`/clinic?doc=${authUser?.id ?? 1}&appointmentId=${appointment.id}`)}
                       className="flex-1 rounded-full bg-emerald-600 px-4 py-2 text-center text-sm font-bold text-white transition hover:bg-emerald-700"
                     >
-                      Vào phòng tư vấn
+                      {tr('Vào phòng tư vấn', 'Enter consultation room')}
                     </button>
                   )}
 
                   {appointment.status === 'CANCELLED' && (
                     <div className="flex-1 rounded-full bg-slate-100 py-2 text-center text-xs font-semibold text-slate-500">
-                      ❌ Đã hủy phiên khám này
+                      ❌ {tr('Đã hủy phiên khám này', 'This consultation was cancelled')}
                     </div>
                   )}
                 </div>
@@ -1951,17 +1984,17 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-amber-100 bg-amber-50/30 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-amber-600">
             <Star className="h-4 w-4" />
-            Đánh giá từ bệnh nhân
+            {tr('Đánh giá từ bệnh nhân', 'Patient reviews')}
           </div>
           <div className="mt-4 space-y-3">
             {data.completedAppointments.filter(a => a.review).length === 0 ? (
-              <p className="text-center py-6 text-sm text-slate-400">Chưa có đánh giá nào từ bệnh nhân</p>
+              <p className="text-center py-6 text-sm text-slate-400">{tr('Chưa có đánh giá nào từ bệnh nhân', 'No patient reviews yet')}</p>
             ) : data.completedAppointments.filter(a => a.review).map((appointment) => (
               <div key={appointment.id} className="rounded-3xl border border-amber-100 bg-white p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <p className="font-bold text-slate-900">{appointment.patient?.fullName ?? 'Bệnh nhân'}</p>
-                    <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate)}</p>
+                    <p className="font-bold text-slate-900">{appointment.patient?.fullName ?? tr('Bệnh nhân', 'Patient')}</p>
+                    <p className="text-sm text-slate-600">{formatDate(appointment.appointmentDate, language)}</p>
                   </div>
                   <div className="flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-sm font-black text-amber-700">
                     {appointment.review!.rating} ★
@@ -1980,7 +2013,7 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <FileText className="h-4 w-4" />
-            Prescriptions
+            {tr('Đơn thuốc', 'Prescriptions')}
           </div>
           <div className="mt-4 space-y-3">
             {data.prescriptions.map((item) => (
@@ -1995,7 +2028,7 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <HeartPulse className="h-4 w-4" />
-            Vital signs
+            {tr('Chỉ số sinh tồn', 'Vital signs')}
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {data.vitals.map((item) => (
@@ -2010,17 +2043,17 @@ function Dashboard() {
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700">
             <MessageSquare className="h-4 w-4" />
-            Messages
+            {tr('Tin nhắn', 'Messages')}
           </div>
           <div className="mt-4 space-y-3">
             {data.messages.map((message) => (
               <div key={message.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-center justify-between text-sm text-slate-600">
                   <span>{message.sender?.fullName ?? '---'}</span>
-                  <span>{formatTime(message.createdAt)}</span>
+                  <span>{formatTime(message.createdAt, language)}</span>
                 </div>
                 <p className="mt-2 break-words text-sm font-medium text-slate-800 [overflow-wrap:anywhere]">
-                  {formatMessagePreview(message)}
+                  {formatMessagePreview(message, language)}
                 </p>
               </div>
             ))}
