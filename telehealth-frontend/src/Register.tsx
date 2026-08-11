@@ -23,7 +23,10 @@ export default function Register() {
       const response = await fetch(`${API_URL}/users`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, preferredLanguage: language, consentAccepted: true, consentPolicyVersion: POLICY_VERSION }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message || 'Registration failed');
-      navigate('/login', { replace: true });
+      navigate('/verify-email', {
+        replace: true,
+        state: { email: form.email.trim().toLowerCase(), devOtp: payload.devOtp },
+      });
     } catch (error) { setMessage({ ok: false, text: error instanceof Error ? error.message : 'Registration failed' }); }
     finally { setLoading(false); }
   }

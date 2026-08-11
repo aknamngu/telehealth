@@ -907,10 +907,16 @@ function Dashboard() {
             <Sparkles className="h-4 w-4 text-sky-600" />
             <span className="text-sm font-semibold text-slate-700">{roleLabel}</span>
           </div>
-          <button onClick={handleLogout} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-rose-200 hover:text-rose-700">
-            <LogOut className="h-4 w-4" />
-            {tr('Đăng xuất', 'Sign out')}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => navigate('/security')} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700 sm:px-4">
+              <ShieldCheck className="h-4 w-4" />
+              <span className="hidden sm:inline">{tr('Bảo mật', 'Security')}</span>
+            </button>
+            <button onClick={handleLogout} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-rose-200 hover:text-rose-700 sm:px-4">
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">{tr('Đăng xuất', 'Sign out')}</span>
+            </button>
+          </div>
         </div>
       </div>
 

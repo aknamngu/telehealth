@@ -19,6 +19,12 @@ model User {
   preferredLanguage   String         @default("vi")
   consentAcceptedAt   DateTime?
   consentPolicyVersion String?
+  emailVerifiedAt     DateTime?
+  emailOtpHash        String?
+  emailOtpExpiresAt   DateTime?
+  emailOtpAttempts    Int            @default(0)
+  twoFactorEnabled    Boolean        @default(false)
+  twoFactorSecret     String?        @db.Text
 
   // Mối quan hệ
   doctorProfile       DoctorProfile?

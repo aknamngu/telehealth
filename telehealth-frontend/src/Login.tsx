@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowRight, ShieldCheck, Sparkles, Stethoscope } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, ShieldCheck, Sparkles, Stethoscope } from 'lucide-react';
 import { getAuthToken, setAuthSession } from './auth';
 import { useLanguage } from './i18n';
 
@@ -13,18 +13,32 @@ type LoginResponse = {
     fullName: string;
     role: 'ADMIN' | 'PATIENT' | 'DOCTOR';
     createdAt: string;
+    preferredLanguage?: 'vi' | 'en';
+    twoFactorEnabled?: boolean;
   };
 };
+
+type TwoFactorChallenge = {
+  message?: string;
+  requiresTwoFactor: true;
+  twoFactorToken: string;
+};
+
+type ErrorResponse = { message?: string; code?: string; email?: string };
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
 function Login() {
   const navigate = useNavigate();
-  const { t } = useLanguage();
-  const [email, setEmail] = useState('admin@telehealth.vn');
+  const location = useLocation();
+  const { language, t } = useLanguage();
+  const locationEmail = (location.state as { email?: string } | null)?.email;
+  const [email, setEmail] = useState(locationEmail ?? 'admin@telehealth.vn');
   const [password, setPassword] = useState('admin123');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [twoFactorToken, setTwoFactorToken] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
 
   useEffect(() => {
     if (getAuthToken()) {
@@ -38,18 +52,33 @@ function Login() {
     setError('');
 
     try {
-      const response = await fetch(`${API_URL}/auth/login`, {
+      const response = await fetch(`${API_URL}${twoFactorToken ? '/auth/2fa/login' : '/auth/login'}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(
+          twoFactorToken
+            ? { twoFactorToken, code: twoFactorCode }
+            : { email, password },
+        ),
       });
 
-      const payload = (await response.json()) as LoginResponse | { message?: string };
+      const payload = (await response.json()) as LoginResponse | TwoFactorChallenge | ErrorResponse;
 
       if (!response.ok) {
-        throw new Error(payload.message ?? t('loginFailed'));
+        const apiError = payload as ErrorResponse;
+        if (apiError.code === 'EMAIL_VERIFICATION_REQUIRED') {
+          navigate('/verify-email', { state: { email: apiError.email ?? email } });
+          return;
+        }
+        throw new Error(apiError.message ?? t('loginFailed'));
+      }
+
+      if ('requiresTwoFactor' in payload && payload.requiresTwoFactor) {
+        setTwoFactorToken(payload.twoFactorToken);
+        setTwoFactorCode('');
+        return;
       }
 
       const data = payload as LoginResponse;
@@ -141,6 +170,13 @@ function Login() {
           </div>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+            {twoFactorToken && (
+              <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm leading-6 text-sky-900">
+                <p className="font-bold">{language === 'vi' ? 'Xác thực hai lớp' : 'Two-factor authentication'}</p>
+                <p>{language === 'vi' ? 'Mở Google Authenticator và nhập mã 6 số đang hiển thị.' : 'Open Google Authenticator and enter the current 6-digit code.'}</p>
+              </div>
+            )}
+            {!twoFactorToken && <>
             <label className="block space-y-2">
               <span className="text-sm font-semibold text-slate-700">{t('email')}</span>
               <input
@@ -152,7 +188,6 @@ function Login() {
                 autoComplete="email"
               />
             </label>
-
             <label className="block space-y-2">
               <span className="text-sm font-semibold text-slate-700">{t('password')}</span>
               <input
@@ -164,6 +199,14 @@ function Login() {
                 autoComplete="current-password"
               />
             </label>
+            </>}
+
+            {twoFactorToken && (
+              <label className="block space-y-2">
+                <span className="text-sm font-semibold text-slate-700">{language === 'vi' ? 'Mã Google Authenticator' : 'Google Authenticator code'}</span>
+                <input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={twoFactorCode} onChange={(event) => setTwoFactorCode(event.target.value.replace(/\D/g, ''))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-2xl font-black tracking-[.3em] outline-none transition focus:border-sky-400 focus:bg-white" placeholder="000000" autoFocus />
+              </label>
+            )}
 
             {error ? (
               <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
@@ -176,25 +219,29 @@ function Login() {
               disabled={loading}
               className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? t('loggingIn') : t('login')}
+              {loading ? t('loggingIn') : twoFactorToken ? (language === 'vi' ? 'Xác minh và đăng nhập' : 'Verify and sign in') : t('login')}
               <ArrowRight className="h-4 w-4" />
             </button>
           </form>
 
-          <button
+          {twoFactorToken && (
+            <button type="button" onClick={() => { setTwoFactorToken(''); setTwoFactorCode(''); setError(''); }} className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-slate-600 hover:text-sky-700"><ArrowLeft className="h-4 w-4" />{language === 'vi' ? 'Đăng nhập lại' : 'Start over'}</button>
+          )}
+
+          {!twoFactorToken && <button
             type="button"
             onClick={() => navigate('/')}
             className="mt-4 text-sm font-semibold text-slate-600 transition hover:text-sky-700"
           >
             {t('backHome')}
-          </button>
-          <button
+          </button>}
+          {!twoFactorToken && <button
             type="button"
             onClick={() => navigate('/register')}
             className="ml-5 mt-4 text-sm font-semibold text-sky-700 transition hover:text-sky-900"
           >
             {t('createAccount')}
-          </button>
+          </button>}
         </section>
       </div>
     </div>

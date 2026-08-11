@@ -1,0 +1,7 @@
+ALTER TABLE `User`
+  ADD COLUMN `emailVerifiedAt` DATETIME(3) NULL,
+  ADD COLUMN `emailOtpHash` VARCHAR(191) NULL,
+  ADD COLUMN `emailOtpExpiresAt` DATETIME(3) NULL,
+  ADD COLUMN `emailOtpAttempts` INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN `twoFactorEnabled` BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN `twoFactorSecret` TEXT NULL;

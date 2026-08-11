@@ -16,6 +16,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { WalletModule } from './wallet/wallet.module';
 import { MedicationRemindersModule } from './medication-reminders/medication-reminders.module';
 import { ConsentsModule } from './consents/consents.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ConsentsModule } from './consents/consents.module';
       isGlobal: true,
     }),
     PrismaModule,
+    MailModule,
     UsersModule,
     AuthModule,
     DoctorsModule,

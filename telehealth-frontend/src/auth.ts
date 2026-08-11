@@ -6,6 +6,8 @@ export interface AuthUser {
   fullName: string;
   role: AuthRole;
   createdAt: string;
+  preferredLanguage?: 'vi' | 'en';
+  twoFactorEnabled?: boolean;
 }
 
 const ACCESS_TOKEN_KEY = 'telehealth_access_token';

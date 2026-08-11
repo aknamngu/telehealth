@@ -3,13 +3,18 @@ import { PrismaService } from '../prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
+import { randomInt } from 'node:crypto';
+import { MailService } from '../mail/mail.service';
 
 const CURRENT_POLICY_VERSION = '2026-08-11';
 
 @Injectable()
 export class UsersService {
   // Tiêm PrismaService toàn cục vào để xài trực tiếp
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mail: MailService,
+  ) {}
 
   async create(createUserDto: CreateUserDto) {
     if (
@@ -26,8 +31,9 @@ export class UsersService {
     }
 
     // 1. Kiểm tra xem email này đã tồn tại trong DB chưa
+    const normalizedEmail = createUserDto.email.trim().toLowerCase();
     const existingUser = await this.prisma.user.findUnique({
-      where: { email: createUserDto.email },
+      where: { email: normalizedEmail },
     });
 
     if (existingUser) {
@@ -35,9 +41,10 @@ export class UsersService {
     }
 
     // 2. Tiến hành lưu user mới vào database Docker
+    const otp = String(randomInt(0, 1_000_000)).padStart(6, '0');
     const newUser = await this.prisma.user.create({
       data: {
-        email: createUserDto.email,
+        email: normalizedEmail,
         password: await bcrypt.hash(createUserDto.password, 10),
         fullName: createUserDto.fullName,
         role: createUserDto.role || 'PATIENT',
@@ -45,6 +52,9 @@ export class UsersService {
           createUserDto.preferredLanguage === 'en' ? 'en' : 'vi',
         consentAcceptedAt: new Date(),
         consentPolicyVersion: CURRENT_POLICY_VERSION,
+        emailOtpHash: await bcrypt.hash(otp, 10),
+        emailOtpExpiresAt: new Date(Date.now() + 5 * 60_000),
+        emailOtpAttempts: 0,
         wallet: {
           create: {
             balance: 1000000,
@@ -53,8 +63,18 @@ export class UsersService {
       },
     });
 
+    const delivery = await this.mail.sendVerificationOtp(
+      newUser.email,
+      newUser.fullName,
+      otp,
+    );
+
     return {
-      message: 'Đăng ký tài khoản thành công rực rỡ!',
+      message:
+        delivery.mode === 'smtp'
+          ? 'Đăng ký thành công. Mã OTP đã được gửi đến email của bạn.'
+          : 'Đăng ký thành công. Dùng mã OTP local để xác minh email.',
+      ...(delivery.devOtp ? { devOtp: delivery.devOtp } : {}),
       data: {
         id: newUser.id,
         email: newUser.email,
@@ -87,7 +107,8 @@ export class UsersService {
     return `This action returns a #${id} user`;
   }
 
-  update(id: number, updateUserDto: UpdateUserDto) {
+  update(id: number, _updateUserDto: UpdateUserDto) {
+    void _updateUserDto;
     return `This action updates a #${id} user`;
   }
 

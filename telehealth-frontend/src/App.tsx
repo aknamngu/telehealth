@@ -6,6 +6,8 @@ import Clinic from './Clinic';
 import Dashboard from './Dashboard';
 import Login from './Login';
 import Register from './Register';
+import VerifyEmail from './VerifyEmail';
+import SecuritySettings from './SecuritySettings';
 import LanguageSwitcher from './LanguageSwitcher';
 import { LanguageProvider } from './i18n';
 import { getAuthToken, getAuthUser, type AuthUser } from './auth';
@@ -267,6 +269,7 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
           <Route
             path="/clinic"
             element={
@@ -280,6 +283,14 @@ function App() {
             element={
               <RequireAuth>
                 <Dashboard />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/security"
+            element={
+              <RequireAuth>
+                <SecuritySettings />
               </RequireAuth>
             }
           />
