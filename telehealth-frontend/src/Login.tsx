@@ -49,14 +49,14 @@ function Login() {
       const payload = (await response.json()) as LoginResponse | { message?: string };
 
       if (!response.ok) {
-        throw new Error(payload.message ?? 'Không thể đăng nhập');
+        throw new Error(payload.message ?? t('loginFailed'));
       }
 
       const data = payload as LoginResponse;
       setAuthSession(data.access_token, data.user);
       navigate('/dashboard', { replace: true });
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Không thể đăng nhập');
+      setError(submitError instanceof Error ? submitError.message : t('loginFailed'));
     } finally {
       setLoading(false);
     }
@@ -68,7 +68,7 @@ function Login() {
         <section className="space-y-8">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-cyan-100 backdrop-blur">
             <Sparkles className="h-4 w-4" />
-            Secure telehealth access
+            {t('secureAccess')}
           </div>
           <div className="space-y-4">
             <h1 className="max-w-2xl text-4xl font-black tracking-tight sm:text-6xl">
@@ -81,9 +81,9 @@ function Login() {
 
           <div className="grid gap-4 sm:grid-cols-3">
             {[
-              ['Admin', 'Tổng quan hệ thống'],
-              ['Bác sĩ', 'Lịch khám và bệnh nhân'],
-              ['Bệnh nhân', 'Đơn thuốc và chỉ số sức khỏe'],
+              [t('adminRole'), t('systemOverview')],
+              [t('doctor'), t('doctorSchedule')],
+              [t('patient'), t('patientHealth')],
             ].map(([title, description]) => (
               <div key={title} className="rounded-3xl border border-white/10 bg-white/8 p-4 backdrop-blur">
                 <p className="text-sm font-bold text-white">{title}</p>
@@ -136,7 +136,7 @@ function Login() {
             </div>
             <div>
               <p className="text-sm font-bold uppercase tracking-[0.2em] text-sky-700">OS Telehealth</p>
-              <p className="text-sm text-slate-500">Đăng nhập an toàn</p>
+              <p className="text-sm text-slate-500">{t('secureSignIn')}</p>
             </div>
           </div>
 
