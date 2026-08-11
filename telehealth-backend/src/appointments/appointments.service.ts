@@ -14,6 +14,15 @@ export class AppointmentsService {
 
   async create(createAppointmentDto: CreateAppointmentDto, user: { sub: number; role: string }) {
     const { patientId, doctorId, appointmentDate, startTime, endTime } = createAppointmentDto;
+    const symptoms = createAppointmentDto.symptoms?.trim();
+
+    if (!appointmentDate || !startTime || !endTime) {
+      throw new BadRequestException('Vui lòng chọn đầy đủ ngày khám và khung giờ còn trống.');
+    }
+    if (!symptoms) {
+      throw new BadRequestException('Vui lòng mô tả triệu chứng trước khi đặt lịch.');
+    }
+
     const resolvedPatientId = user.role === 'PATIENT' ? user.sub : patientId;
     const resolvedDoctorId = user.role === 'DOCTOR' ? user.sub : doctorId;
 
@@ -39,6 +48,19 @@ export class AppointmentsService {
 
     if (user.role === 'DOCTOR' && user.sub !== resolvedDoctorId) {
       throw new ForbiddenException('Bác sĩ chỉ có thể tạo lịch cho chính mình!');
+    }
+
+    const selectedSchedule = await this.prisma.doctorSchedule.findFirst({
+      where: {
+        doctorId: resolvedDoctorId,
+        date: appointmentDate,
+        startTime,
+        endTime,
+        isBooked: false,
+      },
+    });
+    if (!selectedSchedule) {
+      throw new BadRequestException('Khung giờ đã chọn không còn trống. Vui lòng chọn khung giờ khác.');
     }
 
     // 2.5 Kiểm tra xem Bác sĩ đã có lịch trùng ngày và khung giờ này chưa
@@ -94,6 +116,14 @@ export class AppointmentsService {
 
     // 3. Tiến hành lưu lịch hẹn mới và thanh toán (trừ ví, tạo hoá đơn)
     const appointment = await this.prisma.$transaction(async (prisma) => {
+      const reservedSlot = await prisma.doctorSchedule.updateMany({
+        where: { id: selectedSchedule.id, isBooked: false },
+        data: { isBooked: true },
+      });
+      if (reservedSlot.count !== 1) {
+        throw new BadRequestException('Khung giờ vừa được người khác đặt. Vui lòng chọn khung giờ khác.');
+      }
+
       const appt = await prisma.appointment.create({
         data: {
           patientId: resolvedPatientId,
@@ -101,6 +131,7 @@ export class AppointmentsService {
           appointmentDate: new Date(appointmentDate), // Ép kiểu chuỗi ngày thành Date Object
           startTime,
           endTime,
+          symptoms,
           status: 'PENDING', // Mặc định khi vừa đặt là Chờ duyệt
         },
         include: { patient: { select: { fullName: true } } },
@@ -159,6 +190,7 @@ export class AppointmentsService {
         appointmentDate: now,
         startTime: `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`,
         endTime: `${now.getHours() + 1}:${now.getMinutes().toString().padStart(2, '0')}`,
+        symptoms: emergencyType,
         status: 'PENDING',
       }
     });
@@ -248,6 +280,15 @@ export class AppointmentsService {
         await prisma.invoice.updateMany({
           where: { appointmentId: id, status: 'PAID' },
           data: { status: 'PENDING_REFUND' }
+        });
+        await prisma.doctorSchedule.updateMany({
+          where: {
+            doctorId: appointment.doctorId,
+            date: appointment.appointmentDate.toISOString().slice(0, 10),
+            startTime: appointment.startTime,
+            endTime: appointment.endTime,
+          },
+          data: { isBooked: false },
         });
         return appt;
       });

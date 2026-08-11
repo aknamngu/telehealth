@@ -160,6 +160,7 @@ function Home() {
   const [bookingStep, setBookingStep] = useState<1 | 2 | 3>(1); // 1=info, 2=payment, 3=success
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState('');
+  const [bookingFieldErrors, setBookingFieldErrors] = useState<{ slot?: string; symptoms?: string }>({});
   const modalRef = useRef<HTMLDivElement>(null);
   const [availableSlots, setAvailableSlots] = useState<{startTime: string, endTime: string}[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -290,13 +291,15 @@ function Home() {
       doctorId: doctor.id,
       doctorName: doctor.name,
       appointmentDate: `${yyyy}-${mm}-${dd}`,
-      startTime: '09:00',
-      endTime: '09:30',
+      startTime: '',
+      endTime: '',
       symptoms: '',
       paymentMethod: 'WALLET',
     });
     setBookingStep(1);
     setBookingError('');
+    setBookingFieldErrors({});
+    setAvailableSlots([]);
     document.body.style.overflow = 'hidden';
   }
 
@@ -304,7 +307,37 @@ function Home() {
     setBookingModal(null);
     setBookingStep(1);
     setBookingError('');
+    setBookingFieldErrors({});
+    setAvailableSlots([]);
     document.body.style.overflow = '';
+  }
+
+  function continueToPayment() {
+    if (!bookingModal) return;
+
+    const selectedSlotIsAvailable = availableSlots.some(
+      (slot) =>
+        slot.startTime === bookingModal.startTime &&
+        slot.endTime === bookingModal.endTime,
+    );
+    const errors: { slot?: string; symptoms?: string } = {};
+
+    if (!selectedSlotIsAvailable) {
+      errors.slot = 'Vui lòng chọn một khung giờ còn trống.';
+    }
+    if (!bookingModal.symptoms.trim()) {
+      errors.symptoms = 'Vui lòng mô tả triệu chứng trước khi tiếp tục.';
+    }
+
+    setBookingFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setBookingError('Vui lòng điền đầy đủ thông tin bắt buộc.');
+      return;
+    }
+
+    setBookingModal({ ...bookingModal, symptoms: bookingModal.symptoms.trim() });
+    setBookingError('');
+    setBookingStep(2);
   }
 
 
@@ -316,6 +349,20 @@ function Home() {
 
     const authUser = getAuthUser() as AuthUser | null;
     if (!authUser) { navigate('/login'); return; }
+
+    if (!bookingModal.startTime || !bookingModal.endTime || !bookingModal.symptoms.trim()) {
+      setBookingStep(1);
+      setBookingFieldErrors({
+        ...(!bookingModal.startTime || !bookingModal.endTime
+          ? { slot: 'Vui lòng chọn một khung giờ còn trống.' }
+          : {}),
+        ...(!bookingModal.symptoms.trim()
+          ? { symptoms: 'Vui lòng mô tả triệu chứng trước khi tiếp tục.' }
+          : {}),
+      });
+      setBookingError('Vui lòng điền đầy đủ thông tin bắt buộc.');
+      return;
+    }
 
     setBookingLoading(true);
     setBookingError('');
@@ -333,7 +380,7 @@ function Home() {
           appointmentDate: bookingModal.appointmentDate,
           startTime: bookingModal.startTime,
           endTime: bookingModal.endTime,
-          symptoms: bookingModal.symptoms || undefined,
+          symptoms: bookingModal.symptoms.trim(),
         }),
       });
 
@@ -404,7 +451,17 @@ function Home() {
                     type="date"
                     value={bookingModal.appointmentDate}
                     min={new Date().toISOString().split('T')[0]}
-                    onChange={(e) => setBookingModal({ ...bookingModal, appointmentDate: e.target.value })}
+                    onChange={(e) => {
+                      setBookingModal({
+                        ...bookingModal,
+                        appointmentDate: e.target.value,
+                        startTime: '',
+                        endTime: '',
+                      });
+                      setAvailableSlots([]);
+                      setBookingFieldErrors((current) => ({ ...current, slot: undefined }));
+                      setBookingError('');
+                    }}
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                   />
                 </div>
@@ -428,7 +485,11 @@ function Home() {
                       <button
                         key={slot.startTime}
                         type="button"
-                        onClick={() => setBookingModal({ ...bookingModal, startTime: slot.startTime, endTime: slot.endTime })}
+                        onClick={() => {
+                          setBookingModal({ ...bookingModal, startTime: slot.startTime, endTime: slot.endTime });
+                          setBookingFieldErrors((current) => ({ ...current, slot: undefined }));
+                          setBookingError('');
+                        }}
                         className={`rounded-xl border px-2 py-2 text-xs font-bold transition ${bookingModal.startTime === slot.startTime ? 'border-sky-500 bg-sky-500 text-white shadow-md shadow-sky-500/30' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-sky-300 hover:bg-sky-50'}`}
                       >
                         {slot.startTime} - {slot.endTime}
@@ -438,21 +499,33 @@ function Home() {
                   {bookingModal.startTime && (
                      <p className="mt-2 text-xs text-slate-400">Đã chọn ca: {bookingModal.startTime} — Kết thúc: {bookingModal.endTime}</p>
                   )}
+                  {bookingFieldErrors.slot && (
+                    <p className="mt-2 text-xs font-semibold text-rose-600">{bookingFieldErrors.slot}</p>
+                  )}
                 </div>
 
                 {/* Triệu chứng */}
                 <div>
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-                    Mô tả triệu chứng <span className="normal-case font-normal text-slate-400">(tuỳ chọn)</span>
+                    Mô tả triệu chứng <span className="text-rose-500">*</span>
                   </label>
                   <textarea
                     id="booking-symptoms"
                     rows={3}
                     placeholder="Ví dụ: đau đầu, sốt nhẹ, ho khan 3 ngày..."
                     value={bookingModal.symptoms}
-                    onChange={(e) => setBookingModal({ ...bookingModal, symptoms: e.target.value })}
-                    className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                    required
+                    aria-invalid={Boolean(bookingFieldErrors.symptoms)}
+                    onChange={(e) => {
+                      setBookingModal({ ...bookingModal, symptoms: e.target.value });
+                      setBookingFieldErrors((current) => ({ ...current, symptoms: undefined }));
+                      setBookingError('');
+                    }}
+                    className={`w-full resize-none rounded-2xl border bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:ring-2 ${bookingFieldErrors.symptoms ? 'border-rose-400 focus:border-rose-400 focus:ring-rose-100' : 'border-slate-200 focus:border-sky-400 focus:ring-sky-100'}`}
                   />
+                  {bookingFieldErrors.symptoms && (
+                    <p className="mt-2 text-xs font-semibold text-rose-600">{bookingFieldErrors.symptoms}</p>
+                  )}
                 </div>
 
                 {bookingError && (
@@ -461,8 +534,10 @@ function Home() {
 
                 <button
                   id="booking-next-btn"
-                  onClick={() => { setBookingError(''); setBookingStep(2); }}
-                  className="w-full rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 py-3.5 text-sm font-black text-white shadow-lg shadow-sky-600/30 transition hover:from-sky-700 hover:to-cyan-600 active:scale-95"
+                  type="button"
+                  onClick={continueToPayment}
+                  disabled={loadingSlots}
+                  className="w-full rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 py-3.5 text-sm font-black text-white shadow-lg shadow-sky-600/30 transition hover:from-sky-700 hover:to-cyan-600 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Tiếp tục chọn thanh toán →
                 </button>

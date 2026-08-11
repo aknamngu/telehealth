@@ -80,6 +80,7 @@ model Appointment {
   appointmentDate DateTime
   startTime       String                  // Ví dụ: "09:00"
   endTime         String                  // Ví dụ: "09:30"
+  symptoms        String?                 @db.Text
   status          String                  // 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'
   createdAt       DateTime                @default(now())
 
