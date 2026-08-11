@@ -246,7 +246,27 @@ function Clinic() {
       pc.close();
       pcRef.current = null;
     };
-  }, []);
+  }, [appointmentId]);
+
+  // ─── 5.1 Xử lý dọn dẹp khi thoát trang (tránh kẹt trạng thái bận) ─────────
+  const callStatusRef = useRef(callStatus);
+  useEffect(() => {
+    callStatusRef.current = callStatus;
+  }, [callStatus]);
+
+  useEffect(() => {
+    if (!appointmentId) return;
+    const handleUnload = () => {
+      if (callStatusRef.current === 'calling' || callStatusRef.current === 'connected') {
+        socket.emit('call:end', { appointmentId });
+      }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      handleUnload();
+    };
+  }, [appointmentId]);
 
   // ─── 6. Setup Socket Listeners (Xử lý Gọi thường, Báo bận, Cấp cứu) ──────
   useEffect(() => {
