@@ -121,11 +121,15 @@ model ConsultationConsent {
 
 // 4. Bảng Đơn thuốc điện tử
 model Prescription {
-  id            Int         @id @default(autoincrement())
-  appointmentId Int
-  diagnosis     String      @db.Text // Chẩn đoán bệnh
-  medicines     String      @db.Text // Danh sách thuốc dạng text/JSON
-  createdAt     DateTime    @default(now())
+  id                Int         @id @default(autoincrement())
+  appointmentId     Int
+  diagnosis         String      @db.Text // Chẩn đoán bệnh
+  medicines         String      @db.Text // Danh sách thuốc dạng text/JSON
+  verificationToken String?     @unique @db.VarChar(64)
+  verificationHash  String?     @db.VarChar(64)
+  issuedAt           DateTime    @default(now())
+  revokedAt          DateTime?
+  createdAt          DateTime    @default(now())
 
   appointment   Appointment @relation(fields: [appointmentId], references: [id])
   reminders     MedicationReminder[]

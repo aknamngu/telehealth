@@ -1,17 +1,25 @@
-import { BrowserRouter as Router, Navigate, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
-import Home from './Home';
-import Clinic from './Clinic';
-import Dashboard from './Dashboard';
-import Login from './Login';
-import Register from './Register';
-import VerifyEmail from './VerifyEmail';
-import SecuritySettings from './SecuritySettings';
-import LanguageSwitcher from './LanguageSwitcher';
-import { LanguageProvider } from './i18n';
-import { getAuthToken, getAuthUser, type AuthUser } from './auth';
-import { socket } from './socket';
+import {
+  BrowserRouter as Router,
+  Navigate,
+  Routes,
+  Route,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import Home from "./Home";
+import Clinic from "./Clinic";
+import Dashboard from "./Dashboard";
+import Login from "./Login";
+import Register from "./Register";
+import VerifyEmail from "./VerifyEmail";
+import SecuritySettings from "./SecuritySettings";
+import PrescriptionVerification from "./PrescriptionVerification";
+import LanguageSwitcher from "./LanguageSwitcher";
+import { LanguageProvider } from "./i18n";
+import { getAuthToken, getAuthUser, type AuthUser } from "./auth";
+import { socket } from "./socket";
 
 interface IncomingCallPayload {
   appointmentId: string;
@@ -42,43 +50,51 @@ function RequireAuth({ children }: { children: ReactNode }) {
 function DoctorCallListener() {
   const authUser = getAuthUser() as AuthUser | null;
   const navigate = useNavigate();
-  const [incomingCall, setIncomingCall] = useState<IncomingCallPayload | null>(null);
-  const [emergencyCall, setEmergencyCall] = useState<EmergencyCallPayload | null>(null);
+  const [incomingCall, setIncomingCall] = useState<IncomingCallPayload | null>(
+    null,
+  );
+  const [emergencyCall, setEmergencyCall] =
+    useState<EmergencyCallPayload | null>(null);
 
   useEffect(() => {
-    if (!authUser || authUser.role !== 'DOCTOR') return;
+    if (!authUser || authUser.role !== "DOCTOR") return;
 
     // Tham gia phòng của riêng bác sĩ để nhận thông báo từ mọi nơi
-    socket.emit('joinRoom', `doctor_${authUser.id}`);
+    socket.emit("joinRoom", `doctor_${authUser.id}`);
 
     const normalCallHandler = (payload: IncomingCallPayload) => {
-      console.log('Doctor received call:invite', payload);
+      console.log("Doctor received call:invite", payload);
       setIncomingCall(payload);
     };
 
     const emergencyCallHandler = (payload: EmergencyCallPayload) => {
-      console.log('🚨 Doctor received EMERGENCY call:emergency', payload);
+      console.log("🚨 Doctor received EMERGENCY call:emergency", payload);
       setEmergencyCall(payload);
     };
 
-    const emergencyHandledHandler = (payload: { appointmentId: string | number }) => {
+    const emergencyHandledHandler = (payload: {
+      appointmentId: string | number;
+    }) => {
       setEmergencyCall((prev) => {
-        if (prev && String(prev.appointmentId) === String(payload.appointmentId)) {
-          console.log('🚨 SOS call handled by another doctor, hiding modal.');
+        if (
+          prev &&
+          String(prev.appointmentId) === String(payload.appointmentId)
+        ) {
+          console.log("🚨 SOS call handled by another doctor, hiding modal.");
           return null;
         }
         return prev;
       });
     };
 
-    socket.on('call:invite', normalCallHandler);
-    socket.on('call:emergency', emergencyCallHandler);
-    socket.on('call:emergency:handled', emergencyHandledHandler);
+    socket.on("call:invite", normalCallHandler);
+    socket.on("call:emergency", emergencyCallHandler);
+    socket.on("call:emergency:handled", emergencyHandledHandler);
 
     return () => {
-      socket.off('call:invite', normalCallHandler);
-      socket.off('call:emergency', emergencyCallHandler);
-      socket.off('call:emergency:handled', emergencyHandledHandler);
+      socket.off("call:invite", normalCallHandler);
+      socket.off("call:emergency", emergencyCallHandler);
+      socket.off("call:emergency:handled", emergencyHandledHandler);
     };
   }, [authUser?.id, authUser?.role]);
 
@@ -86,10 +102,10 @@ function DoctorCallListener() {
   if (emergencyCall) {
     const acceptEmergency = () => {
       const { appointmentId, doctorId } = emergencyCall;
-      
+
       // Nếu bác sĩ đang trong cuộc gọi thường khác -> phát tín hiệu override
       if (incomingCall) {
-        socket.emit('call:emergency:override', {
+        socket.emit("call:emergency:override", {
           emergencyAppointmentId: appointmentId,
           previousAppointmentId: incomingCall.appointmentId,
           doctorId: doctorId ?? authUser?.id ?? 1,
@@ -99,7 +115,9 @@ function DoctorCallListener() {
       setEmergencyCall(null);
       setIncomingCall(null);
       const docParam = doctorId ?? authUser?.id ?? 1;
-      navigate(`/clinic?doc=${docParam}&appointmentId=${appointmentId}&autoAccept=true&isEmergency=true`);
+      navigate(
+        `/clinic?doc=${docParam}&appointmentId=${appointmentId}&autoAccept=true&isEmergency=true`,
+      );
     };
 
     const declineEmergency = () => {
@@ -122,7 +140,9 @@ function DoctorCallListener() {
                 <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-[0.2em] text-white">
                   BÁO ĐỘNG ĐỎ KHẨN CẤP
                 </span>
-                <h2 className="mt-1 text-2xl font-black tracking-tight">CA CẤP CỨU NGUY CẤP</h2>
+                <h2 className="mt-1 text-2xl font-black tracking-tight">
+                  CA CẤP CỨU NGUY CẤP
+                </h2>
               </div>
             </div>
           </div>
@@ -130,22 +150,31 @@ function DoctorCallListener() {
           {/* Content */}
           <div className="space-y-3 px-6 py-6">
             <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-rose-600">Loại tình huống khẩn cấp</p>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-rose-600">
+                Loại tình huống khẩn cấp
+              </p>
               <p className="mt-1 text-lg font-black text-rose-950">
-                {emergencyCall.emergencyType || 'Cấp cứu nguy kịch'}
+                {emergencyCall.emergencyType || "Cấp cứu nguy kịch"}
               </p>
             </div>
 
             <p className="text-sm leading-6 text-slate-700">
-              Bệnh nhân <span className="font-bold text-slate-900">{emergencyCall.fromName}</span> đang yêu cầu trợ giúp y tế khẩn cấp ngay lập tức!
+              Bệnh nhân{" "}
+              <span className="font-bold text-slate-900">
+                {emergencyCall.fromName}
+              </span>{" "}
+              đang yêu cầu trợ giúp y tế khẩn cấp ngay lập tức!
             </p>
             {emergencyCall.details && (
-              <p className="text-xs text-slate-500 italic">" {emergencyCall.details} "</p>
+              <p className="text-xs text-slate-500 italic">
+                " {emergencyCall.details} "
+              </p>
             )}
 
             {incomingCall && (
               <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 font-semibold border border-amber-200">
-                ⚠️ Chấp nhận ca này sẽ tự động ưu tiên tạm ngắt phiên tư vấn thường hiện tại của bạn để cứu ca cấp cứu!
+                ⚠️ Chấp nhận ca này sẽ tự động ưu tiên tạm ngắt phiên tư vấn
+                thường hiện tại của bạn để cứu ca cấp cứu!
               </div>
             )}
           </div>
@@ -177,11 +206,13 @@ function DoctorCallListener() {
     const { appointmentId, doctorId } = incomingCall;
     setIncomingCall(null);
     const docParam = doctorId ?? authUser?.id ?? 1;
-    navigate(`/clinic?doc=${docParam}&appointmentId=${appointmentId}&autoAccept=true`);
+    navigate(
+      `/clinic?doc=${docParam}&appointmentId=${appointmentId}&autoAccept=true`,
+    );
   };
 
   const decline = () => {
-    socket.emit('call:decline', { appointmentId: incomingCall.appointmentId });
+    socket.emit("call:decline", { appointmentId: incomingCall.appointmentId });
     setIncomingCall(null);
   };
 
@@ -198,7 +229,9 @@ function DoctorCallListener() {
               </span>
             </span>
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-100">Cuộc gọi đến</p>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-100">
+                Cuộc gọi đến
+              </p>
               <h2 className="text-xl font-black">Bệnh nhân đang gọi</h2>
             </div>
           </div>
@@ -207,9 +240,14 @@ function DoctorCallListener() {
         {/* Body */}
         <div className="px-6 py-5">
           <p className="text-slate-600">
-            <span className="font-bold text-slate-900">{incomingCall.fromName}</span> đang yêu cầu phiên tư vấn video trực tuyến.
+            <span className="font-bold text-slate-900">
+              {incomingCall.fromName}
+            </span>{" "}
+            đang yêu cầu phiên tư vấn video trực tuyến.
           </p>
-          <p className="mt-1 text-sm text-slate-400">Mã cuộc hẹn: #{incomingCall.appointmentId}</p>
+          <p className="mt-1 text-sm text-slate-400">
+            Mã cuộc hẹn: #{incomingCall.appointmentId}
+          </p>
         </div>
 
         {/* Actions */}
@@ -241,13 +279,16 @@ function App() {
     socket.connect();
 
     const onConnect = () => {
-      if (authUser.role === 'DOCTOR') {
-        socket.emit('joinRoom', `doctor_${authUser.id}`);
-        console.log('Doctor socket joined room (on connect):', `doctor_${authUser.id}`);
+      if (authUser.role === "DOCTOR") {
+        socket.emit("joinRoom", `doctor_${authUser.id}`);
+        console.log(
+          "Doctor socket joined room (on connect):",
+          `doctor_${authUser.id}`,
+        );
       }
     };
 
-    socket.on('connect', onConnect);
+    socket.on("connect", onConnect);
 
     // Nếu socket đã connect sẵn thì gọi luôn
     if (socket.connected) {
@@ -255,7 +296,7 @@ function App() {
     }
 
     return () => {
-      socket.off('connect', onConnect);
+      socket.off("connect", onConnect);
       socket.disconnect();
     };
   }, [authUser?.id, authUser?.role]);
@@ -270,6 +311,10 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route
+            path="/prescriptions/verify/:token"
+            element={<PrescriptionVerification />}
+          />
           <Route
             path="/clinic"
             element={

@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { createPrescriptionVerification } from '../src/prescriptions/prescription-verification';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import 'dotenv/config';
 
@@ -310,31 +311,52 @@ async function main() {
     );
   }
 
-  await prisma.prescription.createMany({
-    data: [
-      {
-        appointmentId: appointments[0].id,
-        diagnosis: 'Rối loạn nhịp tim nhẹ, căng thẳng thần kinh.',
-        medicines:
-          'Metoprolol 25mg, Magnesium B6, nghỉ ngơi, theo dõi huyết áp 7 ngày.',
+  const prescriptionSeeds = [
+    {
+      appointmentId: appointments[0].id,
+      diagnosis: 'Rối loạn nhịp tim nhẹ, căng thẳng thần kinh.',
+      medicines:
+        'Metoprolol 25mg, Magnesium B6, nghỉ ngơi, theo dõi huyết áp 7 ngày.',
+    },
+    {
+      appointmentId: appointments[1].id,
+      diagnosis: 'Viêm họng cấp, sốt nhẹ, ho khan.',
+      medicines: 'Paracetamol, nước ấm, súc họng, tái khám sau 3 ngày.',
+    },
+    {
+      appointmentId: appointments[2].id,
+      diagnosis: 'Theo dõi dinh dưỡng trẻ em, cân nặng thấp hơn chuẩn.',
+      medicines: 'Bổ sung vi chất, tăng bữa phụ, hẹn tái khám sau 2 tuần.',
+    },
+    {
+      appointmentId: appointments[4].id,
+      diagnosis: 'Dị ứng da mức độ nhẹ do thời tiết.',
+      medicines: 'Kem bôi dưỡng ẩm, kháng histamine nhẹ, tránh kích ứng.',
+    },
+  ];
+
+  for (const prescription of prescriptionSeeds) {
+    const appointment = appointments.find(
+      (item) => item.id === prescription.appointmentId,
+    )!;
+    await prisma.prescription.create({
+      data: {
+        ...prescription,
+        ...createPrescriptionVerification(
+          {
+            appointmentId: prescription.appointmentId,
+            doctorId: appointment.doctorId,
+            patientId: appointment.patientId,
+            diagnosis: prescription.diagnosis,
+            medicines: prescription.medicines,
+          },
+          process.env.PRESCRIPTION_SIGNING_KEY ??
+            process.env.JWT_SECRET ??
+            'telehealth-local-prescription-key',
+        ),
       },
-      {
-        appointmentId: appointments[1].id,
-        diagnosis: 'Viêm họng cấp, sốt nhẹ, ho khan.',
-        medicines: 'Paracetamol, nước ấm, súc họng, tái khám sau 3 ngày.',
-      },
-      {
-        appointmentId: appointments[2].id,
-        diagnosis: 'Theo dõi dinh dưỡng trẻ em, cân nặng thấp hơn chuẩn.',
-        medicines: 'Bổ sung vi chất, tăng bữa phụ, hẹn tái khám sau 2 tuần.',
-      },
-      {
-        appointmentId: appointments[4].id,
-        diagnosis: 'Dị ứng da mức độ nhẹ do thời tiết.',
-        medicines: 'Kem bôi dưỡng ẩm, kháng histamine nhẹ, tránh kích ứng.',
-      },
-    ],
-  });
+    });
+  }
 
   await prisma.callLog.createMany({
     data: [
