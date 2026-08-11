@@ -184,6 +184,26 @@ function formatTime(value?: string | Date) {
   return new Date(value).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatMessagePreview(message: MessageItem) {
+  if (message.messageType === 'IMAGE' || message.content?.startsWith('data:image/')) {
+    return 'Đã gửi một hình ảnh';
+  }
+
+  if (message.messageType === 'FILE') {
+    return 'Đã gửi một tệp đính kèm';
+  }
+
+  const content = message.content?.trim();
+  if (!content) return 'Tin nhắn không có nội dung';
+
+  // Never render credential-like hashes or other opaque secrets in a dashboard.
+  if (/^[a-f0-9]{32,}(?::[a-f0-9]{32,})+$/i.test(content)) {
+    return 'Nội dung được bảo vệ';
+  }
+
+  return content;
+}
+
 function formatDoctorName(name?: string) {
   if (!name) return '---';
   const trimmed = name.trim();
@@ -1427,7 +1447,9 @@ function Dashboard() {
                   <span>{message.sender?.fullName ?? '---'} · {message.sender?.role ?? '---'}</span>
                   <span>{formatTime(message.createdAt)}</span>
                 </div>
-                <p className="mt-2 text-sm font-medium text-slate-800">{message.content}</p>
+                <p className="mt-2 break-words text-sm font-medium text-slate-800 [overflow-wrap:anywhere]">
+                  {formatMessagePreview(message)}
+                </p>
               </div>
             ))}
           </div>
@@ -1737,7 +1759,9 @@ function Dashboard() {
                   <span>{message.sender?.fullName ?? '---'}</span>
                   <span>{formatTime(message.createdAt)}</span>
                 </div>
-                <p className="mt-2 text-sm font-medium text-slate-800">{message.content}</p>
+                <p className="mt-2 break-words text-sm font-medium text-slate-800 [overflow-wrap:anywhere]">
+                  {formatMessagePreview(message)}
+                </p>
               </div>
             ))}
           </div>
@@ -1995,7 +2019,9 @@ function Dashboard() {
                   <span>{message.sender?.fullName ?? '---'}</span>
                   <span>{formatTime(message.createdAt)}</span>
                 </div>
-                <p className="mt-2 text-sm font-medium text-slate-800">{message.content}</p>
+                <p className="mt-2 break-words text-sm font-medium text-slate-800 [overflow-wrap:anywhere]">
+                  {formatMessagePreview(message)}
+                </p>
               </div>
             ))}
           </div>

@@ -72,7 +72,7 @@ export class DashboardService {
       this.prisma.vitalSignsAI.count(),
     ]);
 
-    const [statusStats, recentAppointments, recentMessages, recentPrescriptions, recentVitals, topDoctors, allUsers] = await Promise.all([
+    const [statusStats, recentAppointments, recentMessageRecords, recentPrescriptions, recentVitals, topDoctors, allUsers] = await Promise.all([
       this.prisma.appointment.groupBy({
         by: ['status'],
         _count: { status: true },
@@ -88,7 +88,10 @@ export class DashboardService {
       this.prisma.messageLog.findMany({
         orderBy: { createdAt: 'desc' },
         take: 8,
-        include: {
+        select: {
+          id: true,
+          messageType: true,
+          createdAt: true,
           sender: { select: { id: true, fullName: true, role: true } },
           appointment: { select: { id: true, status: true } },
         },
@@ -126,6 +129,18 @@ export class DashboardService {
         select: { id: true, email: true, fullName: true, role: true, isActive: true, createdAt: true },
       }),
     ]);
+
+    // Administrators need activity metadata for system supervision, not the
+    // private contents of doctor-patient conversations.
+    const recentMessages = recentMessageRecords.map((message) => ({
+      ...message,
+      content:
+        message.messageType === 'IMAGE'
+          ? 'Đã gửi một hình ảnh'
+          : message.messageType === 'FILE'
+            ? 'Đã gửi một tệp đính kèm'
+            : 'Tin nhắn văn bản được bảo vệ',
+    }));
 
     return {
       message: 'Tải dashboard admin thành công!',
