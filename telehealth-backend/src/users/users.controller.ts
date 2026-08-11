@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -28,6 +37,15 @@ export class UsersController {
     return this.usersService.getProfile(user.sub);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Patch('preferences/language')
+  updateLanguage(
+    @CurrentUser() user: { sub: number },
+    @Body('preferredLanguage') preferredLanguage: string,
+  ) {
+    return this.usersService.updateLanguage(user.sub, preferredLanguage);
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @Get('doctors/pending')
@@ -46,7 +64,8 @@ export class UsersController {
   @Patch('profile/patient')
   updatePatientProfile(
     @CurrentUser() user: { sub: number },
-    @Body() dto: { medicalHistory?: string; allergies?: string; bloodType?: string }
+    @Body()
+    dto: { medicalHistory?: string; allergies?: string; bloodType?: string },
   ) {
     return this.usersService.updatePatientProfile(user.sub, dto);
   }
@@ -56,7 +75,7 @@ export class UsersController {
   @Patch('profile/doctor')
   updateDoctorProfile(
     @CurrentUser() user: { sub: number },
-    @Body() dto: { specialty?: string; experienceYears?: number; bio?: string }
+    @Body() dto: { specialty?: string; experienceYears?: number; bio?: string },
   ) {
     return this.usersService.updateDoctorProfile(user.sub, dto);
   }
@@ -66,7 +85,7 @@ export class UsersController {
   @Patch(':id/doctor-profile/approve')
   approveDoctorProfile(
     @Param('id') id: string,
-    @Body('status') status: 'APPROVED' | 'REJECTED'
+    @Body('status') status: 'APPROVED' | 'REJECTED',
   ) {
     return this.usersService.approveDoctorProfile(+id, status);
   }
@@ -85,4 +104,3 @@ export class UsersController {
     return this.usersService.remove(+id);
   }
 }
-

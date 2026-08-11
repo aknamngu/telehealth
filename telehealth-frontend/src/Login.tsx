@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, ShieldCheck, Sparkles, Stethoscope } from 'lucide-react';
 import { getAuthToken, setAuthSession } from './auth';
+import { useLanguage } from './i18n';
 
 type LoginResponse = {
   message?: string;
@@ -19,6 +20,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
 function Login() {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [email, setEmail] = useState('admin@telehealth.vn');
   const [password, setPassword] = useState('admin123');
   const [loading, setLoading] = useState(false);
@@ -70,11 +72,10 @@ function Login() {
           </div>
           <div className="space-y-4">
             <h1 className="max-w-2xl text-4xl font-black tracking-tight sm:text-6xl">
-              Đăng nhập để vào dashboard theo đúng vai trò của bạn
+              {t('loginTitle')}
             </h1>
             <p className="max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
-              Mỗi tài khoản sẽ nhìn thấy dữ liệu riêng theo quyền hạn của mình. Admin xem tổng quan,
-              bệnh nhân xem hồ sơ cá nhân, bác sĩ xem lịch và tương tác khám chữa.
+              {t('loginDescription')}
             </p>
           </div>
 
@@ -94,7 +95,7 @@ function Login() {
           <div className="rounded-[2rem] border border-white/10 bg-white/8 p-6 backdrop-blur">
             <div className="flex items-center gap-3 text-sm font-semibold text-cyan-100">
               <ShieldCheck className="h-5 w-5" />
-              Tài khoản mẫu để test nhanh
+              {t('sampleAccounts')}
             </div>
             <div className="mt-8 grid grid-cols-2 gap-4 text-xs text-white/70 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
               {[
@@ -141,7 +142,7 @@ function Login() {
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
             <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Email</span>
+              <span className="text-sm font-semibold text-slate-700">{t('email')}</span>
               <input
                 type="email"
                 value={email}
@@ -153,7 +154,7 @@ function Login() {
             </label>
 
             <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Mật khẩu</span>
+              <span className="text-sm font-semibold text-slate-700">{t('password')}</span>
               <input
                 type="password"
                 value={password}
@@ -175,7 +176,7 @@ function Login() {
               disabled={loading}
               className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? 'Đang đăng nhập...' : 'Vào dashboard'}
+              {loading ? t('loggingIn') : t('login')}
               <ArrowRight className="h-4 w-4" />
             </button>
           </form>
@@ -185,7 +186,14 @@ function Login() {
             onClick={() => navigate('/')}
             className="mt-4 text-sm font-semibold text-slate-600 transition hover:text-sky-700"
           >
-            Quay về trang chủ
+            {t('backHome')}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/register')}
+            className="ml-5 mt-4 text-sm font-semibold text-sky-700 transition hover:text-sky-900"
+          >
+            {t('createAccount')}
           </button>
         </section>
       </div>

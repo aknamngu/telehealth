@@ -2,6 +2,8 @@ import { socket } from './socket';
 import { useEffect, useRef, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getAuthToken, getAuthUser } from './auth';
+import PrivacyPolicyModal, { POLICY_VERSION } from './PrivacyPolicyModal';
+import { useLanguage } from './i18n';
 import {
   Activity,
   ArrowLeft,
@@ -61,6 +63,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
 function Clinic() {
   const navigate = useNavigate();
+  const { language, t } = useLanguage();
   const [searchParams] = useSearchParams();
   const authUser = getAuthUser();
   const queryDocId = searchParams.get('doc');
@@ -82,6 +85,13 @@ function Clinic() {
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [isEmergencyCall, setIsEmergencyCall] = useState(isEmergencyParam);
+  const [consultationConsent, setConsultationConsent] = useState(false);
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [consentLoading, setConsentLoading] = useState(true);
+  const [consentSaving, setConsentSaving] = useState(false);
+  const [consentError, setConsentError] = useState('');
+  const [policyVisible, setPolicyVisible] = useState(false);
+  const [policyOpened, setPolicyOpened] = useState(false);
 
   // Modals state
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -120,8 +130,40 @@ function Clinic() {
   const appointmentIdRef = useRef(appointmentId);
   appointmentIdRef.current = appointmentId;
 
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!token || !appointmentId) return;
+    setConsentLoading(true);
+    fetch(`${API_URL}/consents/appointments/${appointmentId}/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.message || 'Không thể kiểm tra đồng ý chính sách.');
+        setConsultationConsent(Boolean(payload.data?.accepted));
+      })
+      .catch((error) => setConsentError(error instanceof Error ? error.message : 'Không thể kiểm tra đồng ý chính sách.'))
+      .finally(() => setConsentLoading(false));
+  }, [appointmentId]);
+
+  async function acceptConsultationConsent() {
+    if (!policyOpened || !consentChecked) return;
+    setConsentSaving(true); setConsentError('');
+    try {
+      const response = await fetch(`${API_URL}/consents/appointments/${appointmentId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+        body: JSON.stringify({ consentAccepted: true, policyVersion: POLICY_VERSION }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || 'Không thể ghi nhận đồng ý.');
+      setConsultationConsent(true);
+    } catch (error) {
+      setConsentError(error instanceof Error ? error.message : 'Không thể ghi nhận đồng ý.');
+    } finally { setConsentSaving(false); }
+  }
+
   // ─── 1. Khởi động Camera ───────────────────────────────────────────────────
   useEffect(() => {
+    if (!consultationConsent) return;
     async function startCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -138,7 +180,7 @@ function Clinic() {
     return () => {
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
     };
-  }, []);
+  }, [consultationConsent]);
 
   // ─── 2. Tải danh sách Bác sĩ từ API backend ──────────────────────────────
   useEffect(() => {
@@ -735,6 +777,22 @@ function Clinic() {
   return (
     <div className="min-h-screen text-slate-900">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.16),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.12),_transparent_28%),linear-gradient(180deg,_#f8fafc_0%,_#edf5ff_50%,_#f8fafc_100%)]" />
+
+      {!consultationConsent && (
+        <div className="fixed inset-0 z-[9998] grid place-items-center bg-slate-950/80 p-4 backdrop-blur-md">
+          <section className="w-full max-w-xl rounded-[2rem] bg-white p-7 shadow-2xl">
+            <div className="flex items-start gap-3"><ShieldCheck className="mt-1 h-7 w-7 text-emerald-600" /><div><p className="text-xs font-bold uppercase tracking-[.2em] text-emerald-700">FR30 · #{appointmentId}</p><h1 className="mt-1 text-2xl font-black">{t('consultationConsentTitle')}</h1></div></div>
+            <p className="mt-5 text-sm leading-7 text-slate-600">{t('consultationConsentText')}</p>
+            {consentLoading ? <p className="mt-5 text-sm font-semibold text-sky-700">{language === 'vi' ? 'Đang kiểm tra trạng thái đồng ý...' : 'Checking consent status...'}</p> : <>
+              <button type="button" onClick={() => { setPolicyOpened(true); setPolicyVisible(true); }} className="mt-5 text-sm font-bold text-sky-700 underline">{t('readPolicy')}</button>
+              <label className="mt-4 flex items-start gap-3 rounded-2xl bg-slate-50 p-4 text-sm"><input type="checkbox" disabled={!policyOpened} checked={consentChecked} onChange={(event) => setConsentChecked(event.target.checked)} className="mt-1" /><span>{t('acceptConsultation')}</span></label>
+              {consentError && <p className="mt-4 rounded-2xl bg-rose-50 p-3 text-sm font-semibold text-rose-700">{consentError}</p>}
+              <div className="mt-6 flex gap-3"><button type="button" onClick={() => navigate('/dashboard')} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold">{language === 'vi' ? 'Quay lại' : 'Go back'}</button><button type="button" onClick={acceptConsultationConsent} disabled={!consentChecked || consentSaving} className="flex-[2] rounded-2xl bg-slate-950 px-4 py-3 text-sm font-bold text-white disabled:opacity-40">{consentSaving ? t('saving') : t('continueClinic')}</button></div>
+            </>}
+          </section>
+          <PrivacyPolicyModal open={policyVisible} onClose={() => setPolicyVisible(false)} />
+        </div>
+      )}
 
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-white/60 bg-white/80 backdrop-blur-xl shadow-[0_8px_32px_rgba(15,23,42,0.04)]">

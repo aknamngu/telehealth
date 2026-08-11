@@ -15,12 +15,13 @@ import { MessagesModule } from './messages/messages.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { WalletModule } from './wallet/wallet.module';
 import { MedicationRemindersModule } from './medication-reminders/medication-reminders.module';
+import { ConsentsModule } from './consents/consents.module';
 
 @Module({
   imports: [
     // Gộp chung tất cả các module cần import vào cùng một mảng này nha!
     ConfigModule.forRoot({
-      isGlobal: true, 
+      isGlobal: true,
     }),
     PrismaModule,
     UsersModule,
@@ -35,7 +36,7 @@ import { MedicationRemindersModule } from './medication-reminders/medication-rem
     DashboardModule,
     WalletModule,
     MedicationRemindersModule,
-   
+    ConsentsModule,
   ],
   controllers: [AppController],
   providers: [AppService], // Xóa bỏ PrismaService ở đây vì đã có PrismaModule lo rồi!

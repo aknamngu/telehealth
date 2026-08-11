@@ -2,6 +2,9 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import * as bcrypt from 'bcrypt';
+
+const CURRENT_POLICY_VERSION = '2026-08-11';
 
 @Injectable()
 export class UsersService {
@@ -9,6 +12,19 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createUserDto: CreateUserDto) {
+    if (
+      !createUserDto.consentAccepted ||
+      createUserDto.consentPolicyVersion !== CURRENT_POLICY_VERSION
+    ) {
+      throw new BadRequestException(
+        'Bạn phải đọc và đồng ý chính sách bảo mật hiện hành để đăng ký.',
+      );
+    }
+
+    if (!['PATIENT', 'DOCTOR'].includes(createUserDto.role || 'PATIENT')) {
+      throw new BadRequestException('Vai trò đăng ký không hợp lệ.');
+    }
+
     // 1. Kiểm tra xem email này đã tồn tại trong DB chưa
     const existingUser = await this.prisma.user.findUnique({
       where: { email: createUserDto.email },
@@ -22,25 +38,29 @@ export class UsersService {
     const newUser = await this.prisma.user.create({
       data: {
         email: createUserDto.email,
-        password: createUserDto.password, // Tạm thời lưu text thô để test mạch chạy, sau này mình sẽ hash sau nha
+        password: await bcrypt.hash(createUserDto.password, 10),
         fullName: createUserDto.fullName,
         role: createUserDto.role || 'PATIENT',
+        preferredLanguage:
+          createUserDto.preferredLanguage === 'en' ? 'en' : 'vi',
+        consentAcceptedAt: new Date(),
+        consentPolicyVersion: CURRENT_POLICY_VERSION,
         wallet: {
           create: {
             balance: 1000000,
-          }
-        }
+          },
+        },
       },
     });
 
     return {
-      message: "Đăng ký tài khoản thành công rực rỡ!",
+      message: 'Đăng ký tài khoản thành công rực rỡ!',
       data: {
         id: newUser.id,
         email: newUser.email,
         fullName: newUser.fullName,
         role: newUser.role,
-      }
+      },
     };
   }
 
@@ -58,8 +78,8 @@ export class UsersService {
     });
 
     return {
-      message: "Lấy danh sách người dùng từ Database Docker thành công 100%!",
-      data: users
+      message: 'Lấy danh sách người dùng từ Database Docker thành công 100%!',
+      data: users,
     };
   }
 
@@ -78,8 +98,21 @@ export class UsersService {
     });
     return {
       message: `Đã ${isActive ? 'mở khóa' : 'khóa'} tài khoản thành công!`,
-      data: user
+      data: user,
     };
+  }
+
+  async updateLanguage(id: number, preferredLanguage: string) {
+    if (!['vi', 'en'].includes(preferredLanguage)) {
+      throw new BadRequestException('Ngôn ngữ không được hỗ trợ.');
+    }
+
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: { preferredLanguage },
+      select: { id: true, preferredLanguage: true },
+    });
+    return { message: 'Đã cập nhật ngôn ngữ giao diện.', data: user };
   }
 
   async getProfile(id: number) {
@@ -88,13 +121,16 @@ export class UsersService {
       include: {
         doctorProfile: true,
         patientProfile: true,
-      }
+      },
     });
     return { message: 'Lấy hồ sơ thành công!', data: user };
   }
 
   // Bệnh nhân cập nhật hồ sơ y tế cá nhân
-  async updatePatientProfile(userId: number, dto: { medicalHistory?: string; allergies?: string; bloodType?: string }) {
+  async updatePatientProfile(
+    userId: number,
+    dto: { medicalHistory?: string; allergies?: string; bloodType?: string },
+  ) {
     const profile = await this.prisma.patientProfile.upsert({
       where: { userId },
       update: dto,
@@ -104,13 +140,25 @@ export class UsersService {
   }
 
   // Bác sĩ cập nhật hồ sơ chuyên môn (chuyển sang PENDING để Admin duyệt)
-  async updateDoctorProfile(userId: number, dto: { specialty?: string; experienceYears?: number; bio?: string }) {
+  async updateDoctorProfile(
+    userId: number,
+    dto: { specialty?: string; experienceYears?: number; bio?: string },
+  ) {
     const profile = await this.prisma.doctorProfile.upsert({
       where: { userId },
       update: { ...dto, status: 'PENDING' },
-      create: { userId, specialty: dto.specialty ?? '', experienceYears: dto.experienceYears ?? 0, bio: dto.bio, status: 'PENDING' },
+      create: {
+        userId,
+        specialty: dto.specialty ?? '',
+        experienceYears: dto.experienceYears ?? 0,
+        bio: dto.bio,
+        status: 'PENDING',
+      },
     });
-    return { message: 'Hồ sơ đã được gửi, đang chờ Admin phê duyệt!', data: profile };
+    return {
+      message: 'Hồ sơ đã được gửi, đang chờ Admin phê duyệt!',
+      data: profile,
+    };
   }
 
   // Admin phê duyệt hồ sơ Bác sĩ
@@ -119,16 +167,22 @@ export class UsersService {
       where: { userId },
       data: { status },
     });
-    return { message: `Đã ${status === 'APPROVED' ? 'phê duyệt' : 'từ chối'} hồ sơ bác sĩ!`, data: profile };
+    return {
+      message: `Đã ${status === 'APPROVED' ? 'phê duyệt' : 'từ chối'} hồ sơ bác sĩ!`,
+      data: profile,
+    };
   }
 
   // Lấy danh sách bác sĩ PENDING cho Admin duyệt
   async getPendingDoctors() {
     const profiles = await this.prisma.doctorProfile.findMany({
       where: { status: 'PENDING' },
-      include: { user: { select: { id: true, fullName: true, email: true } } }
+      include: { user: { select: { id: true, fullName: true, email: true } } },
     });
-    return { message: 'Lấy danh sách hồ sơ chờ duyệt thành công!', data: profiles };
+    return {
+      message: 'Lấy danh sách hồ sơ chờ duyệt thành công!',
+      data: profiles,
+    };
   }
 
   remove(id: number) {

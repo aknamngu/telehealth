@@ -3,4 +3,7 @@ export class CreateUserDto {
   password!: string;
   fullName!: string;
   role!: string; // 'PATIENT' hoặc 'DOCTOR'
+  preferredLanguage?: 'vi' | 'en';
+  consentAccepted!: boolean;
+  consentPolicyVersion!: string;
 }

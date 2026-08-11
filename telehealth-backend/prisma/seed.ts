@@ -11,12 +11,16 @@ function normalizeDatabaseUrl(databaseUrl: string) {
   return `${databaseUrl}${separator}allowPublicKeyRetrieval=true&useSSL=false`;
 }
 
-const adapter = new PrismaMariaDb(normalizeDatabaseUrl(process.env.DATABASE_URL!));
+const adapter = new PrismaMariaDb(
+  normalizeDatabaseUrl(process.env.DATABASE_URL!),
+);
 const prisma = new PrismaClient({ adapter });
 
 const now = new Date();
-const daysAgo = (days: number) => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-const daysFromNow = (days: number) => new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+const daysAgo = (days: number) =>
+  new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+const daysFromNow = (days: number) =>
+  new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
 async function resetSeedTables() {
   await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0;');
@@ -24,6 +28,7 @@ async function resetSeedTables() {
   await prisma.$executeRawUnsafe('DELETE FROM VitalSignsAI;');
   await prisma.$executeRawUnsafe('DELETE FROM MessageLog;');
   await prisma.$executeRawUnsafe('DELETE FROM CallLog;');
+  await prisma.$executeRawUnsafe('DELETE FROM ConsultationConsent;');
   await prisma.$executeRawUnsafe('DELETE FROM Prescription;');
   await prisma.$executeRawUnsafe('DELETE FROM Appointment;');
   await prisma.$executeRawUnsafe('DELETE FROM DoctorProfile;');
@@ -41,10 +46,18 @@ async function main() {
       password: 'admin123',
       fullName: 'Quản trị hệ thống',
       role: 'ADMIN',
+      preferredLanguage: 'vi',
+      consentAcceptedAt: now,
+      consentPolicyVersion: '2026-08-11',
     },
   });
 
-  const doctors = [] as Array<{ id: number; email: string; fullName: string; role: string }>;
+  const doctors = [] as Array<{
+    id: number;
+    email: string;
+    fullName: string;
+    role: string;
+  }>;
   for (const doctorData of [
     {
       email: 'son.dang@example.com',
@@ -71,10 +84,24 @@ async function main() {
       role: 'DOCTOR',
     },
   ]) {
-    doctors.push(await prisma.user.create({ data: doctorData }));
+    doctors.push(
+      await prisma.user.create({
+        data: {
+          ...doctorData,
+          preferredLanguage: 'vi',
+          consentAcceptedAt: now,
+          consentPolicyVersion: '2026-08-11',
+        },
+      }),
+    );
   }
 
-  const patients = [] as Array<{ id: number; email: string; fullName: string; role: string }>;
+  const patients = [] as Array<{
+    id: number;
+    email: string;
+    fullName: string;
+    role: string;
+  }>;
   for (const patientData of [
     {
       email: 'patient.an@example.com',
@@ -113,7 +140,16 @@ async function main() {
       role: 'PATIENT',
     },
   ]) {
-    patients.push(await prisma.user.create({ data: patientData }));
+    patients.push(
+      await prisma.user.create({
+        data: {
+          ...patientData,
+          preferredLanguage: 'vi',
+          consentAcceptedAt: now,
+          consentPolicyVersion: '2026-08-11',
+        },
+      }),
+    );
   }
 
   await prisma.doctorProfile.createMany({
@@ -194,7 +230,15 @@ async function main() {
     ],
   });
 
-  const appointments = [] as Array<{ id: number; patientId: number; doctorId: number; appointmentDate: Date; startTime: string; endTime: string; status: string }>;
+  const appointments = [] as Array<{
+    id: number;
+    patientId: number;
+    doctorId: number;
+    appointmentDate: Date;
+    startTime: string;
+    endTime: string;
+    status: string;
+  }>;
   for (const appointmentData of [
     {
       patientId: patients[0].id,
@@ -261,7 +305,9 @@ async function main() {
       status: 'PENDING',
     },
   ]) {
-    appointments.push(await prisma.appointment.create({ data: appointmentData }));
+    appointments.push(
+      await prisma.appointment.create({ data: appointmentData }),
+    );
   }
 
   await prisma.prescription.createMany({
@@ -269,7 +315,8 @@ async function main() {
       {
         appointmentId: appointments[0].id,
         diagnosis: 'Rối loạn nhịp tim nhẹ, căng thẳng thần kinh.',
-        medicines: 'Metoprolol 25mg, Magnesium B6, nghỉ ngơi, theo dõi huyết áp 7 ngày.',
+        medicines:
+          'Metoprolol 25mg, Magnesium B6, nghỉ ngơi, theo dõi huyết áp 7 ngày.',
       },
       {
         appointmentId: appointments[1].id,
@@ -346,7 +393,8 @@ async function main() {
         appointmentId: appointments[1].id,
         senderId: doctors[1].id,
         messageType: 'TEXT',
-        content: 'Uống nhiều nước ấm, nghỉ ngơi và theo dõi nhiệt độ mỗi 4 giờ.',
+        content:
+          'Uống nhiều nước ấm, nghỉ ngơi và theo dõi nhiệt độ mỗi 4 giờ.',
       },
       {
         appointmentId: appointments[2].id,
@@ -358,7 +406,8 @@ async function main() {
         appointmentId: appointments[2].id,
         senderId: doctors[2].id,
         messageType: 'TEXT',
-        content: 'Mình điều chỉnh bữa phụ, vi chất và lịch tái khám 2 tuần nữa.',
+        content:
+          'Mình điều chỉnh bữa phụ, vi chất và lịch tái khám 2 tuần nữa.',
       },
       {
         appointmentId: appointments[4].id,
@@ -420,32 +469,42 @@ async function main() {
     data: [
       {
         appointmentId: appointments[0].id,
-        rawTranscript: 'Bệnh nhân than mệt khi gắng sức, bác sĩ khai thác tiền sử tim mạch và stress gần đây.',
-        aiSummary: 'Theo dõi tim mạch, đo huyết áp tại nhà, giảm căng thẳng và tái khám khi có dấu hiệu bất thường.',
-        suggestedMedicines: 'Metoprolol 25mg nếu cần, bổ sung magnesium, nghỉ ngơi.',
+        rawTranscript:
+          'Bệnh nhân than mệt khi gắng sức, bác sĩ khai thác tiền sử tim mạch và stress gần đây.',
+        aiSummary:
+          'Theo dõi tim mạch, đo huyết áp tại nhà, giảm căng thẳng và tái khám khi có dấu hiệu bất thường.',
+        suggestedMedicines:
+          'Metoprolol 25mg nếu cần, bổ sung magnesium, nghỉ ngơi.',
       },
       {
         appointmentId: appointments[1].id,
         rawTranscript: 'Bệnh nhân sốt nhẹ, đau họng, ho khan và ngủ kém.',
-        aiSummary: 'Nghi viêm họng cấp, điều trị triệu chứng và tái khám nếu sốt kéo dài.',
+        aiSummary:
+          'Nghi viêm họng cấp, điều trị triệu chứng và tái khám nếu sốt kéo dài.',
         suggestedMedicines: 'Paracetamol, nước ấm, súc họng.',
       },
       {
         appointmentId: appointments[2].id,
         rawTranscript: 'Phụ huynh báo trẻ ăn ít, biếng ăn và tăng cân chậm.',
-        aiSummary: 'Tăng cường vi chất, phân bổ bữa phụ và đánh giá tăng trưởng lại sau 2 tuần.',
+        aiSummary:
+          'Tăng cường vi chất, phân bổ bữa phụ và đánh giá tăng trưởng lại sau 2 tuần.',
         suggestedMedicines: 'Vitamin tổng hợp, hướng dẫn dinh dưỡng.',
       },
       {
         appointmentId: appointments[4].id,
-        rawTranscript: 'Bệnh nhân ngứa đỏ da sau khi đổi sản phẩm chăm sóc cá nhân.',
-        aiSummary: 'Dị ứng da mức độ nhẹ, ngưng sản phẩm mới và chăm sóc hàng rào da.',
-        suggestedMedicines: 'Kem dưỡng ẩm, thuốc kháng histamine nếu ngứa nhiều.',
+        rawTranscript:
+          'Bệnh nhân ngứa đỏ da sau khi đổi sản phẩm chăm sóc cá nhân.',
+        aiSummary:
+          'Dị ứng da mức độ nhẹ, ngưng sản phẩm mới và chăm sóc hàng rào da.',
+        suggestedMedicines:
+          'Kem dưỡng ẩm, thuốc kháng histamine nếu ngứa nhiều.',
       },
     ],
   });
 
-  console.log('🌱 Seed full-stack telehealth data đã nạp xong: users, doctors, appointments, prescriptions, messages, vital signs, call logs, AI summaries.');
+  console.log(
+    '🌱 Seed full-stack telehealth data đã nạp xong: users, doctors, appointments, prescriptions, messages, vital signs, call logs, AI summaries.',
+  );
 }
 
 main()

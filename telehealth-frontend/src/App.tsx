@@ -5,6 +5,9 @@ import Home from './Home';
 import Clinic from './Clinic';
 import Dashboard from './Dashboard';
 import Login from './Login';
+import Register from './Register';
+import LanguageSwitcher from './LanguageSwitcher';
+import { LanguageProvider } from './i18n';
 import { getAuthToken, getAuthUser, type AuthUser } from './auth';
 import { socket } from './socket';
 
@@ -256,22 +259,33 @@ function App() {
   }, [authUser?.id, authUser?.role]);
 
   return (
-    <Router>
-      <DoctorCallListener />
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/clinic" element={<Clinic />} />
-        <Route
-          path="/dashboard"
-          element={
-            <RequireAuth>
-              <Dashboard />
-            </RequireAuth>
-          }
-        />
-      </Routes>
-    </Router>
+    <LanguageProvider>
+      <Router>
+        <LanguageSwitcher />
+        <DoctorCallListener />
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route
+            path="/clinic"
+            element={
+              <RequireAuth>
+                <Clinic />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <RequireAuth>
+                <Dashboard />
+              </RequireAuth>
+            }
+          />
+        </Routes>
+      </Router>
+    </LanguageProvider>
   );
 }
 
