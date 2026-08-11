@@ -50,11 +50,10 @@ describe('AppointmentsService booking validation', () => {
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
-  it('rejects a time that is not in the doctor available schedule', async () => {
+  it('rejects a time outside the default daily schedule', async () => {
     prisma.user.findUnique
       .mockResolvedValueOnce({ id: 1, role: 'PATIENT' })
       .mockResolvedValueOnce({ id: 2, role: 'DOCTOR' });
-    prisma.doctorSchedule.findFirst.mockResolvedValue(null);
 
     await expect(
       service.create(
@@ -62,12 +61,12 @@ describe('AppointmentsService booking validation', () => {
           patientId: 1,
           doctorId: 2,
           appointmentDate: '2026-08-12',
-          startTime: '09:00',
-          endTime: '09:30',
+          startTime: '09:30',
+          endTime: '10:30',
           symptoms: 'Đau đầu kéo dài hai ngày',
         },
         { sub: 1, role: 'PATIENT' },
       ),
-    ).rejects.toThrow('Khung giờ đã chọn không còn trống.');
+    ).rejects.toThrow('Khung giờ không thuộc lịch khám mặc định 09:00–18:00.');
   });
 });

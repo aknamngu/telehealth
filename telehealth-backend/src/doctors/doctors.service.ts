@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
+import { DEFAULT_APPOINTMENT_SLOTS } from '../scheduling/default-appointment-slots';
 
 @Injectable()
 export class DoctorsService {
@@ -104,19 +105,49 @@ export class DoctorsService {
   }
 
   async getSchedules(id: number, date: string) {
-    // Nếu có truyền date, lấy theo ngày, nếu không thì lấy tất cả
-    const whereClause: any = { doctorId: id };
-    if (date) {
-      whereClause.date = date;
+    if (!date) {
+      const schedules = await this.prisma.doctorSchedule.findMany({
+        where: { doctorId: id },
+        orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+      });
+      return {
+        message: 'Lấy danh sách lịch rảnh thành công!',
+        data: schedules,
+      };
     }
 
-    const schedules = await this.prisma.doctorSchedule.findMany({
-      where: whereClause,
-      orderBy: { startTime: 'asc' },
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new BadRequestException('Ngày khám không đúng định dạng YYYY-MM-DD.');
+    }
+
+    const [year, month, day] = date.split('-').map(Number);
+    const dateStart = new Date(year, month - 1, day);
+    const dateEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        doctorId: id,
+        appointmentDate: { gte: dateStart, lte: dateEnd },
+        status: { in: ['PENDING', 'CONFIRMED', 'ACCEPTED'] },
+      },
+      select: { startTime: true },
+    });
+    const bookedStarts = new Set(appointments.map((item) => item.startTime));
+    const now = new Date();
+
+    const schedules = DEFAULT_APPOINTMENT_SLOTS.map((slot, index) => {
+      const [hour, minute] = slot.startTime.split(':').map(Number);
+      const slotStart = new Date(year, month - 1, day, hour, minute);
+      return {
+        id: -(index + 1),
+        doctorId: id,
+        date,
+        ...slot,
+        isBooked: bookedStarts.has(slot.startTime) || slotStart <= now,
+      };
     });
 
     return {
-      message: 'Lấy danh sách lịch rảnh thành công!',
+      message: 'Lấy lịch mặc định 09:00–18:00 thành công!',
       data: schedules,
     };
   }

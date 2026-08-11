@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { MessagesGateway } from '../messages/messages.gateway';
+import { isDefaultAppointmentSlot } from '../scheduling/default-appointment-slots';
 
 @Injectable()
 export class AppointmentsService {
@@ -50,17 +51,8 @@ export class AppointmentsService {
       throw new ForbiddenException('Bác sĩ chỉ có thể tạo lịch cho chính mình!');
     }
 
-    const selectedSchedule = await this.prisma.doctorSchedule.findFirst({
-      where: {
-        doctorId: resolvedDoctorId,
-        date: appointmentDate,
-        startTime,
-        endTime,
-        isBooked: false,
-      },
-    });
-    if (!selectedSchedule) {
-      throw new BadRequestException('Khung giờ đã chọn không còn trống. Vui lòng chọn khung giờ khác.');
+    if (!isDefaultAppointmentSlot(startTime, endTime)) {
+      throw new BadRequestException('Khung giờ không thuộc lịch khám mặc định 09:00–18:00.');
     }
 
     // 2.5 Kiểm tra xem Bác sĩ đã có lịch trùng ngày và khung giờ này chưa
@@ -116,6 +108,23 @@ export class AppointmentsService {
 
     // 3. Tiến hành lưu lịch hẹn mới và thanh toán (trừ ví, tạo hoá đơn)
     const appointment = await this.prisma.$transaction(async (prisma) => {
+      const selectedSchedule = await prisma.doctorSchedule.upsert({
+        where: {
+          doctorId_date_startTime: {
+            doctorId: resolvedDoctorId,
+            date: appointmentDate,
+            startTime,
+          },
+        },
+        update: { endTime },
+        create: {
+          doctorId: resolvedDoctorId,
+          date: appointmentDate,
+          startTime,
+          endTime,
+          isBooked: false,
+        },
+      });
       const reservedSlot = await prisma.doctorSchedule.updateMany({
         where: { id: selectedSchedule.id, isBooked: false },
         data: { isBooked: true },

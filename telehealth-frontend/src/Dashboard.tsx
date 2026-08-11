@@ -169,10 +169,9 @@ interface DoctorPayload {
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
 const TIME_SLOTS = [
-  '08:00 - 08:30', '08:30 - 09:00', '09:00 - 09:30', '09:30 - 10:00',
-  '10:00 - 10:30', '10:30 - 11:00', '11:00 - 11:30', '11:30 - 12:00',
-  '13:30 - 14:00', '14:00 - 14:30', '14:30 - 15:00', '15:00 - 15:30',
-  '15:30 - 16:00', '16:00 - 16:30', '16:30 - 17:00'
+  '09:00 - 10:00', '10:00 - 11:00', '11:00 - 12:00',
+  '13:00 - 14:00', '14:00 - 15:00', '15:00 - 16:00',
+  '16:00 - 17:00', '17:00 - 18:00'
 ];
 
 function formatDate(value?: string | Date, language: 'vi' | 'en' = 'vi') {
@@ -389,33 +388,6 @@ function Dashboard() {
   useEffect(() => {
     loadDoctorSchedules();
   }, [loadDoctorSchedules]);
-
-  const toggleScheduleSlot = async (timeStr: string) => {
-    if (!authUser || authUser.role !== 'DOCTOR') return;
-    const [start, end] = timeStr.split(' - ');
-    const token = getAuthToken();
-    
-    // Optimistic UI update (optional, nhưng tạm thời gọi API rồi reload cho chắc)
-    try {
-      const res = await fetch(`${API_URL}/doctors/${authUser.id}/schedules/toggle`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}` 
-        },
-        body: JSON.stringify({
-          date: selectedScheduleDate,
-          startTime: start,
-          endTime: end
-        })
-      });
-      if (res.ok) {
-        loadDoctorSchedules(); // Reload data
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   // Real-time: bác sĩ nhận thông báo khi có lịch hẹn mới
   useEffect(() => {
@@ -1849,11 +1821,11 @@ function Dashboard() {
           )}
         </section>
 
-        {/* Quản lý Lịch làm việc */}
+        {/* Lịch làm việc mặc định */}
         <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.06)] lg:col-span-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-sky-700 mb-4">
             <CalendarDays className="h-4 w-4" />
-            {tr('Cấu hình lịch làm việc', 'Work schedule settings')}
+            {tr('Lịch làm việc tự động', 'Automatic work schedule')}
           </div>
           <div className="mb-4">
             <label className="block text-sm font-semibold text-slate-700 mb-2">{tr('Chọn ngày', 'Select date')}:</label>
@@ -1864,27 +1836,25 @@ function Dashboard() {
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-800 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
               min={new Date().toISOString().split('T')[0]}
             />
-            <p className="mt-2 text-xs text-slate-500">{tr('Bấm vào các khung giờ để đánh dấu giờ rảnh (xanh) hoặc bận (xám).', 'Select a time slot to mark it available (green) or unavailable (gray).')}</p>
+            <p className="mt-2 text-xs text-slate-500">{tr('Hệ thống tự mở ca từ 09:00 đến 18:00, nghỉ trưa 12:00–13:00. Ca màu đỏ đã có bệnh nhân đặt.', 'Slots open automatically from 09:00 to 18:00, with a lunch break from 12:00 to 13:00. Red slots are booked.')}</p>
+            {loadingSchedule && <p className="mt-2 text-xs font-semibold text-sky-600">{tr('Đang tải lịch...', 'Loading schedule...')}</p>}
           </div>
           
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
             {TIME_SLOTS.map((slot) => {
               const [start] = slot.split(' - ');
               const scheduleItem = doctorSchedules.find(s => s.startTime === start);
-              const isAvailable = !!scheduleItem;
               const isBooked = scheduleItem?.isBooked;
 
               return (
                 <button
                   key={slot}
-                  onClick={() => toggleScheduleSlot(slot)}
-                  disabled={loadingSchedule || isBooked}
+                  type="button"
+                  disabled
                   className={`rounded-xl px-2 py-3 text-center text-[11px] font-bold transition-all sm:text-sm ${
                     isBooked
                       ? 'bg-rose-100 text-rose-700 opacity-60 cursor-not-allowed border border-rose-200'
-                      : isAvailable 
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 shadow-sm' 
-                        : 'bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                      : 'bg-emerald-50 text-emerald-700 border border-emerald-300 shadow-sm'
                   }`}
                 >
                   {slot}
