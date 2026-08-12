@@ -1,9 +1,38 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { getAuthToken, getAuthUser } from "./auth";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 const POLL_INTERVAL_MS = 30_000;
+
+declare global {
+  interface Window {
+    __telehealthPeerConnection?: RTCPeerConnection;
+    __telehealthPeerPatched?: boolean;
+  }
+}
+
+function installPeerConnectionCapture() {
+  if (
+    typeof window === "undefined" ||
+    typeof RTCPeerConnection === "undefined" ||
+    window.__telehealthPeerPatched
+  ) {
+    return;
+  }
+
+  const originalAddTrack = RTCPeerConnection.prototype.addTrack;
+  RTCPeerConnection.prototype.addTrack = function (
+    track: MediaStreamTrack,
+    ...streams: MediaStream[]
+  ) {
+    window.__telehealthPeerConnection = this;
+    return originalAddTrack.call(this, track, ...streams);
+  };
+  window.__telehealthPeerPatched = true;
+}
+
+installPeerConnectionCapture();
 
 interface MedicationReminder {
   id: number;
@@ -71,6 +100,92 @@ export default function BrowserNotificationManager() {
       ? Notification.permission
       : "unsupported",
   );
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [screenShareStatus, setScreenShareStatus] = useState("");
+  const originalVideoTrackRef = useRef<MediaStreamTrack | null>(null);
+  const displayStreamRef = useRef<MediaStream | null>(null);
+
+  const stopScreenShare = async () => {
+    const pc = window.__telehealthPeerConnection;
+    const originalTrack = originalVideoTrackRef.current;
+    const videoSender = pc
+      ?.getSenders()
+      .find((sender) => sender.track?.kind === "video");
+
+    if (videoSender && originalTrack && originalTrack.readyState === "live") {
+      try {
+        await videoSender.replaceTrack(originalTrack);
+      } catch (error) {
+        console.warn("Không thể trả video về camera:", error);
+      }
+    }
+
+    displayStreamRef.current?.getTracks().forEach((track) => {
+      track.onended = null;
+      track.stop();
+    });
+    displayStreamRef.current = null;
+    originalVideoTrackRef.current = null;
+    setIsScreenSharing(false);
+    setScreenShareStatus("Đã quay lại camera.");
+  };
+
+  const toggleScreenShare = async () => {
+    if (isScreenSharing) {
+      await stopScreenShare();
+      return;
+    }
+
+    const pc = window.__telehealthPeerConnection;
+    if (!pc || pc.connectionState !== "connected") {
+      setScreenShareStatus("Hãy kết nối cuộc gọi trước khi chia sẻ màn hình.");
+      return;
+    }
+
+    const videoSender = pc
+      .getSenders()
+      .find((sender) => sender.track?.kind === "video");
+    if (!videoSender) {
+      setScreenShareStatus("Không tìm thấy luồng video WebRTC.");
+      return;
+    }
+
+    try {
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+      const displayTrack = displayStream.getVideoTracks()[0];
+      if (!displayTrack) {
+        displayStream.getTracks().forEach((track) => track.stop());
+        setScreenShareStatus("Không lấy được hình ảnh màn hình.");
+        return;
+      }
+
+      originalVideoTrackRef.current = videoSender.track ?? null;
+      await videoSender.replaceTrack(displayTrack);
+      displayStreamRef.current = displayStream;
+      setIsScreenSharing(true);
+      setScreenShareStatus("Đang chia sẻ màn hình cho người bên kia.");
+
+      displayTrack.onended = () => {
+        void stopScreenShare();
+      };
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotAllowedError") {
+        setScreenShareStatus("Bạn đã hủy chọn màn hình.");
+        return;
+      }
+      console.error("Lỗi chia sẻ màn hình:", error);
+      setScreenShareStatus("Không thể chia sẻ màn hình trên trình duyệt này.");
+    }
+  };
+
+  useEffect(() => {
+    if (location.pathname !== "/clinic" && displayStreamRef.current) {
+      void stopScreenShare();
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!authUser || !token || permission !== "granted") {
@@ -125,7 +240,7 @@ export default function BrowserNotificationManager() {
     };
 
     const checkAppointmentReminders = async () => {
-      if (!['PATIENT', 'DOCTOR'].includes(authUser.role)) return;
+      if (!["PATIENT", "DOCTOR"].includes(authUser.role)) return;
 
       try {
         const response = await fetch(`${API_URL}/appointments`, {
@@ -144,31 +259,38 @@ export default function BrowserNotificationManager() {
         for (const appointment of appointments) {
           if (
             cancelled ||
-            !['PENDING', 'CONFIRMED', 'ACCEPTED'].includes(appointment.status)
+            !["PENDING", "CONFIRMED", "ACCEPTED"].includes(appointment.status)
           ) {
             continue;
           }
 
           const scheduledAt = appointmentDateTime(appointment);
           const millisecondsUntilAppointment = scheduledAt.getTime() - now.getTime();
-          if (millisecondsUntilAppointment <= 0 || millisecondsUntilAppointment > twentyFourHours) {
+          if (
+            millisecondsUntilAppointment <= 0 ||
+            millisecondsUntilAppointment > twentyFourHours
+          ) {
             continue;
           }
 
-          const isThirtyMinuteReminder = millisecondsUntilAppointment <= thirtyMinutes;
-          const kind = isThirtyMinuteReminder ? '30m' : '24h';
+          const isThirtyMinuteReminder =
+            millisecondsUntilAppointment <= thirtyMinutes;
+          const kind = isThirtyMinuteReminder ? "30m" : "24h";
           const deliveredKey = `telehealth-appointment-notified:${appointment.id}:${kind}`;
           if (localStorage.getItem(deliveredKey)) continue;
 
-          const counterpart = authUser.role === 'PATIENT'
-            ? appointment.doctor?.fullName
-            : appointment.patient?.fullName;
+          const counterpart =
+            authUser.role === "PATIENT"
+              ? appointment.doctor?.fullName
+              : appointment.patient?.fullName;
           const timeLabel = appointment.startTime.slice(0, 5);
-          const dateLabel = scheduledAt.toLocaleDateString('vi-VN');
+          const dateLabel = scheduledAt.toLocaleDateString("vi-VN");
           const title = isThirtyMinuteReminder
-            ? 'Còn 30 phút đến lịch tư vấn'
-            : 'Nhắc lịch tư vấn trong 24 giờ';
-          const body = `${dateLabel} lúc ${timeLabel}${counterpart ? ` · ${counterpart}` : ''}`;
+            ? "Còn 30 phút đến lịch tư vấn"
+            : "Nhắc lịch tư vấn trong 24 giờ";
+          const body = `${dateLabel} lúc ${timeLabel}${
+            counterpart ? ` · ${counterpart}` : ""
+          }`;
 
           if (
             showBrowserNotification(title, {
@@ -181,7 +303,7 @@ export default function BrowserNotificationManager() {
           }
         }
       } catch (error) {
-        console.warn('Không tải được lịch hẹn để nhắc trên trình duyệt:', error);
+        console.warn("Không tải được lịch hẹn để nhắc trên trình duyệt:", error);
       }
     };
 
@@ -204,21 +326,54 @@ export default function BrowserNotificationManager() {
     };
   }, [authUser?.id, authUser?.role, token, permission, location.pathname]);
 
-  if (!authUser || permission !== "default") {
+  const showNotificationButton = Boolean(authUser && permission === "default");
+  const showScreenShareButton = Boolean(
+    authUser && location.pathname === "/clinic",
+  );
+
+  if (!showNotificationButton && !showScreenShareButton) {
     return null;
   }
 
   return (
-    <button
-      type="button"
-      onClick={async () => {
-        const result = await Notification.requestPermission();
-        setPermission(result);
-      }}
-      className="fixed bottom-5 left-5 z-[120] rounded-full bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-2xl transition hover:bg-sky-700"
-      title="Bật thông báo lịch tư vấn, cuộc gọi và nhắc uống thuốc khi trang web đang mở"
-    >
-      🔔 Bật thông báo trình duyệt
-    </button>
+    <>
+      {showNotificationButton && (
+        <button
+          type="button"
+          onClick={async () => {
+            const result = await Notification.requestPermission();
+            setPermission(result);
+          }}
+          className="fixed bottom-5 left-5 z-[120] rounded-full bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-2xl transition hover:bg-sky-700"
+          title="Bật thông báo lịch tư vấn, cuộc gọi và nhắc uống thuốc khi trang web đang mở"
+        >
+          🔔 Bật thông báo trình duyệt
+        </button>
+      )}
+
+      {showScreenShareButton && (
+        <div className="fixed bottom-5 right-5 z-[120] flex flex-col items-end gap-2">
+          {screenShareStatus && (
+            <div className="max-w-xs rounded-2xl bg-slate-950/90 px-4 py-2 text-xs font-semibold text-white shadow-xl">
+              {screenShareStatus}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => void toggleScreenShare()}
+            className={`rounded-full px-5 py-3 text-sm font-bold text-white shadow-2xl transition ${
+              isScreenSharing
+                ? "bg-emerald-600 hover:bg-emerald-700"
+                : "bg-sky-600 hover:bg-sky-700"
+            }`}
+            title={
+              isScreenSharing ? "Dừng chia sẻ màn hình" : "Chia sẻ màn hình"
+            }
+          >
+            {isScreenSharing ? "🖥️ Dừng chia sẻ" : "🖥️ Chia sẻ màn hình"}
+          </button>
+        </div>
+      )}
+    </>
   );
 }
