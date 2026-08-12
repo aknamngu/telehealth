@@ -16,7 +16,7 @@ export type AppointmentEmailDetails = {
   startTime: string;
   endTime: string;
   status: string;
-  kind: 'BOOKED' | 'STATUS_CHANGED' | 'REMINDER';
+  kind: 'BOOKED' | 'STATUS_CHANGED' | 'REMINDER_24H' | 'REMINDER_30M';
 };
 
 @Injectable()
@@ -107,12 +107,14 @@ export class MailService {
     const subjects = {
       BOOKED: `Đã tạo lịch khám #${details.appointmentId}`,
       STATUS_CHANGED: `Lịch khám #${details.appointmentId}: ${details.status}`,
-      REMINDER: `Nhắc lịch khám #${details.appointmentId}`,
+      REMINDER_24H: `Nhắc lịch khám ngày mai #${details.appointmentId}`,
+      REMINDER_30M: `Lịch khám sắp bắt đầu #${details.appointmentId}`,
     };
     const introductions = {
       BOOKED: 'Lịch khám đã được tạo trên hệ thống.',
       STATUS_CHANGED: `Trạng thái lịch khám vừa đổi thành ${details.status}.`,
-      REMINDER: 'Lịch khám của bạn sẽ diễn ra trong vòng 24 giờ tới.',
+      REMINDER_24H: 'Lịch khám của bạn sẽ diễn ra trong vòng 24 giờ tới.',
+      REMINDER_30M: 'Lịch khám của bạn sẽ bắt đầu trong vòng 30 phút tới.',
     };
 
     try {
