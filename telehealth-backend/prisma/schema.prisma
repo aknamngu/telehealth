@@ -177,14 +177,20 @@ model MessageLog {
 
 // 7. Bảng Phân tích chỉ số sinh tồn AI qua Camera (Real-time nhịp tim)
 model VitalSignsAI {
-  id            Int         @id @default(autoincrement())
-  appointmentId Int
-  heartRate     Float?      // Nhịp tim (bpm)
-  respiratoryRate Float?    // Nhịp thở
-  oxygenSaturation Float?   // SpO2 (%)
-  measuredAt    DateTime    @default(now())
+  id                   Int         @id @default(autoincrement())
+  appointmentId        Int
+  heartRate            Float?      // Nhịp tim (bpm)
+  respiratoryRate      Float?      // Nhịp thở
+  oxygenSaturation     Float?      // SpO2 (%)
+  systolicPressure     Float?      // Huyết áp tâm thu (mmHg)
+  diastolicPressure    Float?      // Huyết áp tâm trương (mmHg)
+  source               String      @default("MANUAL")
+  deviceName           String?     @db.VarChar(191)
+  measuredByUserId     Int?
+  notes                String?     @db.VarChar(500)
+  measuredAt           DateTime    @default(now())
 
-  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  appointment          Appointment @relation(fields: [appointmentId], references: [id])
 }
 
 // 8. Bảng Trợ lý AI tóm tắt bệnh án tự động từ cuộc gọi
