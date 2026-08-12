@@ -3,6 +3,7 @@ import { AppointmentsService } from './appointments.service';
 import { PrismaService } from '../prisma.service';
 import { MessagesGateway } from '../messages/messages.gateway';
 import { ConfigService } from '@nestjs/config';
+import { MailService } from '../mail/mail.service';
 
 describe('AppointmentsService booking validation', () => {
   const prisma = {
@@ -14,6 +15,10 @@ describe('AppointmentsService booking validation', () => {
     prisma as unknown as PrismaService,
     gateway as unknown as MessagesGateway,
     { get: jest.fn() } as unknown as ConfigService,
+    {
+      isConfigured: jest.fn().mockReturnValue(false),
+      sendAppointmentEmail: jest.fn(),
+    } as unknown as MailService,
   );
 
   beforeEach(() => jest.clearAllMocks());
