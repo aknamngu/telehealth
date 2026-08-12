@@ -1,6 +1,13 @@
+export type VitalSignSource = 'MANUAL' | 'BLUETOOTH' | 'SIMULATED';
+
 export class CreateVitalSignDto {
   appointmentId!: number;
-  heartRate?: number;          // Nhịp tim (Float)
-  respiratoryRate?: number;    // Nhịp thở (Float)
-  oxygenSaturation?: number;   // SpO2 (%) (Float)
+  heartRate?: number;
+  respiratoryRate?: number;
+  oxygenSaturation?: number;
+  systolicPressure?: number;
+  diastolicPressure?: number;
+  source?: VitalSignSource;
+  deviceName?: string;
+  notes?: string;
 }

@@ -17,6 +17,9 @@ import VerifyEmail from "./VerifyEmail";
 import SecuritySettings from "./SecuritySettings";
 import PrescriptionVerification from "./PrescriptionVerification";
 import LanguageSwitcher from "./LanguageSwitcher";
+import BrowserNotificationManager, {
+  showBrowserNotification,
+} from "./BrowserNotificationManager";
 import { LanguageProvider } from "./i18n";
 import { getAuthToken, getAuthUser, type AuthUser } from "./auth";
 import { socket } from "./socket";
@@ -65,11 +68,23 @@ function DoctorCallListener() {
     const normalCallHandler = (payload: IncomingCallPayload) => {
       console.log("Doctor received call:invite", payload);
       setIncomingCall(payload);
+      if (document.visibilityState !== "visible") {
+        showBrowserNotification("Cuộc gọi tư vấn đến", {
+          body: `${payload.fromName} đang yêu cầu bác sĩ tham gia cuộc gọi.`,
+          tag: `telehealth-call-${payload.appointmentId}`,
+          requireInteraction: true,
+        });
+      }
     };
 
     const emergencyCallHandler = (payload: EmergencyCallPayload) => {
       console.log("🚨 Doctor received EMERGENCY call:emergency", payload);
       setEmergencyCall(payload);
+      showBrowserNotification("🚨 Cuộc gọi cấp cứu SOS", {
+        body: `${payload.fromName}: ${payload.emergencyType}${payload.details ? ` — ${payload.details}` : ""}`,
+        tag: `telehealth-emergency-${payload.appointmentId}`,
+        requireInteraction: true,
+      });
     };
 
     const emergencyHandledHandler = (payload: {
@@ -305,6 +320,7 @@ function App() {
     <LanguageProvider>
       <Router>
         <LanguageSwitcher />
+        <BrowserNotificationManager />
         <DoctorCallListener />
         <Routes>
           <Route path="/" element={<Home />} />

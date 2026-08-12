@@ -1,0 +1,7 @@
+ALTER TABLE `VitalSignsAI`
+  ADD COLUMN `systolicPressure` DOUBLE NULL,
+  ADD COLUMN `diastolicPressure` DOUBLE NULL,
+  ADD COLUMN `source` VARCHAR(191) NOT NULL DEFAULT 'MANUAL',
+  ADD COLUMN `deviceName` VARCHAR(191) NULL,
+  ADD COLUMN `measuredByUserId` INTEGER NULL,
+  ADD COLUMN `notes` VARCHAR(500) NULL;

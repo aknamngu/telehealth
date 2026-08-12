@@ -3,6 +3,8 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
@@ -11,15 +13,42 @@ import { MessagesGateway } from '../messages/messages.gateway';
 import { isDefaultAppointmentSlot } from '../scheduling/default-appointment-slots';
 import { ConfigService } from '@nestjs/config';
 import { createPrescriptionVerification } from '../prescriptions/prescription-verification';
+import {
+  AppointmentEmailDetails,
+  MailService,
+} from '../mail/mail.service';
 
 @Injectable()
-export class AppointmentsService {
-  // Tiêm PrismaService và MessagesGateway vào để thao tác DB và emit socket
+export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
+  private reminderTimer?: NodeJS.Timeout;
+  private reminderJobRunning = false;
+
+  // Tiêm các dịch vụ DB, socket, cấu hình và email.
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: MessagesGateway,
     private readonly config: ConfigService,
+    private readonly mail: MailService,
   ) {}
+
+  onModuleInit() {
+    if (!this.mail.isConfigured()) {
+      return;
+    }
+
+    this.reminderTimer = setInterval(
+      () => void this.sendDueAppointmentReminders(),
+      60_000,
+    );
+    this.reminderTimer.unref();
+    void this.sendDueAppointmentReminders();
+  }
+
+  onModuleDestroy() {
+    if (this.reminderTimer) {
+      clearInterval(this.reminderTimer);
+    }
+  }
 
   async create(
     createAppointmentDto: CreateAppointmentDto,
@@ -218,6 +247,19 @@ export class AppointmentsService {
       /* Gateway chưa ready thì bỏ qua */
     }
 
+    await this.notifyAppointmentParticipants(
+      {
+        id: appointment.id,
+        appointmentDate: new Date(appointmentDate),
+        startTime,
+        endTime,
+        status: appointment.status,
+        patient: { email: patient.email, fullName: patient.fullName },
+        doctor: { email: doctor.email, fullName: doctor.fullName },
+      },
+      'BOOKED',
+    );
+
     return {
       message:
         'Đặt lịch hẹn khám bệnh từ xa thành công rực rỡ! Chờ bác sĩ xác nhận nha.',
@@ -307,6 +349,10 @@ export class AppointmentsService {
     // 1. Kiểm tra xem lịch hẹn này có tồn tại trong DB không
     const appointment = await this.prisma.appointment.findUnique({
       where: { id },
+      include: {
+        patient: { select: { email: true, fullName: true } },
+        doctor: { select: { email: true, fullName: true } },
+      },
     });
 
     if (!appointment) {
@@ -376,6 +422,11 @@ export class AppointmentsService {
         data: { status },
       });
     }
+
+    await this.notifyAppointmentParticipants(
+      { ...appointment, status },
+      'STATUS_CHANGED',
+    );
 
     return {
       message: `Cập nhật trạng thái lịch hẹn sang [${status}] thành công!`,
@@ -539,7 +590,7 @@ export class AppointmentsService {
           select: { fullName: true, email: true },
         },
         prescriptions: true, // Đơn thuốc điện tử bác sĩ kê
-        vitalSigns: true, // Nhịp tim đo bằng AI Camera
+        vitalSigns: true, // Chỉ số kèm nguồn: nhập tay, Bluetooth hoặc mô phỏng
         aiSummaries: true, // Tóm tắt cuộc thoại tự động của Trợ lý AI
         callLogs: true, // Nhật ký cuộc gọi
       },
@@ -553,6 +604,129 @@ export class AppointmentsService {
         'Tải thành công lịch sử hồ sơ bệnh án điện tử tích hợp AI của bệnh nhân!',
       data: medicalHistory,
     };
+  }
+
+  private async sendDueAppointmentReminders() {
+    if (this.reminderJobRunning || !this.mail.isConfigured()) {
+      return;
+    }
+
+    this.reminderJobRunning = true;
+    try {
+      const now = new Date();
+      const searchStart = new Date(now.getTime() - 60 * 60 * 1000);
+      const searchEnd = new Date(now.getTime() + 25 * 60 * 60 * 1000);
+      const appointments = await this.prisma.appointment.findMany({
+        where: {
+          appointmentDate: { gte: searchStart, lte: searchEnd },
+          status: { in: ['PENDING', 'CONFIRMED', 'ACCEPTED'] },
+          OR: [
+            { reminderEmailSentAt: null },
+            { reminder30mEmailSentAt: null },
+          ],
+        },
+        include: {
+          patient: { select: { email: true, fullName: true } },
+          doctor: { select: { email: true, fullName: true } },
+        },
+      });
+
+      for (const appointment of appointments) {
+        const scheduledAt = this.getScheduledAt(appointment);
+        const millisecondsUntilAppointment =
+          scheduledAt.getTime() - now.getTime();
+        if (millisecondsUntilAppointment <= 0) {
+          continue;
+        }
+
+        const thirtyMinutes = 30 * 60 * 1000;
+        const twentyFourHours = 24 * 60 * 60 * 1000;
+
+        if (
+          millisecondsUntilAppointment <= thirtyMinutes &&
+          !appointment.reminder30mEmailSentAt
+        ) {
+          const delivered = await this.notifyAppointmentParticipants(
+            appointment,
+            'REMINDER_30M',
+          );
+          if (delivered) {
+            await this.prisma.appointment.update({
+              where: { id: appointment.id },
+              data: { reminder30mEmailSentAt: new Date() },
+            });
+          }
+          continue;
+        }
+
+        if (
+          millisecondsUntilAppointment <= twentyFourHours &&
+          !appointment.reminderEmailSentAt
+        ) {
+          const delivered = await this.notifyAppointmentParticipants(
+            appointment,
+            'REMINDER_24H',
+          );
+          if (delivered) {
+            await this.prisma.appointment.update({
+              where: { id: appointment.id },
+              data: { reminderEmailSentAt: new Date() },
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(
+        'Job nhắc lịch email gặp lỗi:',
+        error instanceof Error ? error.message : 'Unknown error',
+      );
+    } finally {
+      this.reminderJobRunning = false;
+    }
+  }
+
+  private getScheduledAt(appointment: {
+    appointmentDate: Date;
+    startTime: string;
+  }) {
+    const date = appointment.appointmentDate.toISOString().slice(0, 10);
+    return new Date(`${date}T${appointment.startTime}:00+07:00`);
+  }
+
+  private async notifyAppointmentParticipants(
+    appointment: {
+      id: number;
+      appointmentDate: Date;
+      startTime: string;
+      endTime: string;
+      status: string;
+      patient: { email: string; fullName: string };
+      doctor: { email: string; fullName: string };
+    },
+    kind: AppointmentEmailDetails['kind'],
+  ) {
+    const common = {
+      appointmentId: appointment.id,
+      patientName: appointment.patient.fullName,
+      doctorName: appointment.doctor.fullName,
+      appointmentDate: appointment.appointmentDate,
+      startTime: appointment.startTime,
+      endTime: appointment.endTime,
+      status: appointment.status,
+      kind,
+    };
+
+    const results = await Promise.all([
+      this.mail.sendAppointmentEmail(appointment.patient.email, {
+        ...common,
+        recipientName: appointment.patient.fullName,
+      }),
+      this.mail.sendAppointmentEmail(appointment.doctor.email, {
+        ...common,
+        recipientName: appointment.doctor.fullName,
+      }),
+    ]);
+    return results.some(Boolean);
   }
 
   findOne(id: number) {

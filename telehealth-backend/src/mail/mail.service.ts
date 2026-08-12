@@ -7,6 +7,18 @@ export type OtpDeliveryResult = {
   devOtp?: string;
 };
 
+export type AppointmentEmailDetails = {
+  appointmentId: number;
+  recipientName: string;
+  patientName: string;
+  doctorName: string;
+  appointmentDate: Date | string;
+  startTime: string;
+  endTime: string;
+  status: string;
+  kind: 'BOOKED' | 'STATUS_CHANGED' | 'REMINDER_24H' | 'REMINDER_30M';
+};
+
 @Injectable()
 export class MailService {
   private readonly transporter: Transporter | null;
@@ -32,6 +44,10 @@ export class MailService {
             auth: { user, pass },
           })
         : null;
+  }
+
+  isConfigured() {
+    return this.transporter !== null;
   }
 
   async sendVerificationOtp(
@@ -71,6 +87,72 @@ export class MailService {
       throw new ServiceUnavailableException(
         'Không thể gửi email OTP. Vui lòng kiểm tra cấu hình SMTP.',
       );
+    }
+  }
+
+  async sendAppointmentEmail(
+    email: string,
+    details: AppointmentEmailDetails,
+  ): Promise<boolean> {
+    if (!this.transporter) {
+      if (this.config.get<string>('NODE_ENV') !== 'test') {
+        console.log(
+          `[DEV APPOINTMENT EMAIL] #${details.appointmentId} ${details.kind} -> ${email}`,
+        );
+      }
+      return false;
+    }
+
+    const date = new Date(details.appointmentDate).toLocaleDateString('vi-VN');
+    const subjects = {
+      BOOKED: `Đã tạo lịch khám #${details.appointmentId}`,
+      STATUS_CHANGED: `Lịch khám #${details.appointmentId}: ${details.status}`,
+      REMINDER_24H: `Nhắc lịch khám ngày mai #${details.appointmentId}`,
+      REMINDER_30M: `Lịch khám sắp bắt đầu #${details.appointmentId}`,
+    };
+    const introductions = {
+      BOOKED: 'Lịch khám đã được tạo trên hệ thống.',
+      STATUS_CHANGED: `Trạng thái lịch khám vừa đổi thành ${details.status}.`,
+      REMINDER_24H: 'Lịch khám của bạn sẽ diễn ra trong vòng 24 giờ tới.',
+      REMINDER_30M: 'Lịch khám của bạn sẽ bắt đầu trong vòng 30 phút tới.',
+    };
+
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: email,
+        subject: subjects[details.kind],
+        text: [
+          `Xin chào ${details.recipientName},`,
+          introductions[details.kind],
+          `Bệnh nhân: ${details.patientName}`,
+          `Bác sĩ: ${details.doctorName}`,
+          `Thời gian: ${date}, ${details.startTime}–${details.endTime}`,
+          `Trạng thái: ${details.status}`,
+        ].join('\n'),
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:28px;color:#0f172a">
+            <h2 style="color:#0284c7">OS TeleHealth</h2>
+            <p>Xin chào <strong>${this.escapeHtml(details.recipientName)}</strong>,</p>
+            <p>${this.escapeHtml(introductions[details.kind])}</p>
+            <div style="background:#f0f9ff;border-radius:16px;padding:20px;line-height:1.8">
+              <div><strong>Mã lịch:</strong> #${details.appointmentId}</div>
+              <div><strong>Bệnh nhân:</strong> ${this.escapeHtml(details.patientName)}</div>
+              <div><strong>Bác sĩ:</strong> ${this.escapeHtml(details.doctorName)}</div>
+              <div><strong>Thời gian:</strong> ${date}, ${this.escapeHtml(details.startTime)}–${this.escapeHtml(details.endTime)}</div>
+              <div><strong>Trạng thái:</strong> ${this.escapeHtml(details.status)}</div>
+            </div>
+            <p style="color:#64748b">Đây là email tự động. Vui lòng không gửi thông tin sức khỏe nhạy cảm qua email.</p>
+          </div>
+        `,
+      });
+      return true;
+    } catch (error) {
+      console.warn(
+        `Không thể gửi email lịch khám #${details.appointmentId}:`,
+        error instanceof Error ? error.message : 'SMTP error',
+      );
+      return false;
     }
   }
 
