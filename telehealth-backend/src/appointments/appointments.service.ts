@@ -614,13 +614,16 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     this.reminderJobRunning = true;
     try {
       const now = new Date();
-      const searchStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      const searchEnd = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+      const searchStart = new Date(now.getTime() - 60 * 60 * 1000);
+      const searchEnd = new Date(now.getTime() + 25 * 60 * 60 * 1000);
       const appointments = await this.prisma.appointment.findMany({
         where: {
           appointmentDate: { gte: searchStart, lte: searchEnd },
-          reminderEmailSentAt: null,
           status: { in: ['PENDING', 'CONFIRMED', 'ACCEPTED'] },
+          OR: [
+            { reminderEmailSentAt: null },
+            { reminder30mEmailSentAt: null },
+          ],
         },
         include: {
           patient: { select: { email: true, fullName: true } },
@@ -632,22 +635,44 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         const scheduledAt = this.getScheduledAt(appointment);
         const millisecondsUntilAppointment =
           scheduledAt.getTime() - now.getTime();
-        if (
-          millisecondsUntilAppointment <= 0 ||
-          millisecondsUntilAppointment > 24 * 60 * 60 * 1000
-        ) {
+        if (millisecondsUntilAppointment <= 0) {
           continue;
         }
 
-        const delivered = await this.notifyAppointmentParticipants(
-          appointment,
-          'REMINDER',
-        );
-        if (delivered) {
-          await this.prisma.appointment.update({
-            where: { id: appointment.id },
-            data: { reminderEmailSentAt: new Date() },
-          });
+        const thirtyMinutes = 30 * 60 * 1000;
+        const twentyFourHours = 24 * 60 * 60 * 1000;
+
+        if (
+          millisecondsUntilAppointment <= thirtyMinutes &&
+          !appointment.reminder30mEmailSentAt
+        ) {
+          const delivered = await this.notifyAppointmentParticipants(
+            appointment,
+            'REMINDER_30M',
+          );
+          if (delivered) {
+            await this.prisma.appointment.update({
+              where: { id: appointment.id },
+              data: { reminder30mEmailSentAt: new Date() },
+            });
+          }
+          continue;
+        }
+
+        if (
+          millisecondsUntilAppointment <= twentyFourHours &&
+          !appointment.reminderEmailSentAt
+        ) {
+          const delivered = await this.notifyAppointmentParticipants(
+            appointment,
+            'REMINDER_24H',
+          );
+          if (delivered) {
+            await this.prisma.appointment.update({
+              where: { id: appointment.id },
+              data: { reminderEmailSentAt: new Date() },
+            });
+          }
         }
       }
     } catch (error) {
