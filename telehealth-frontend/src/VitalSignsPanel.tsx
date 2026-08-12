@@ -53,7 +53,7 @@ export default function VitalSignsPanel({ appointmentId, language }: Props) {
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((payload) => {
         const rows: Reading[] = payload.data ?? [];
-        const row = rows.at(-1);
+        const row = rows[rows.length - 1];
         if (row) {
           setLatest(row);
           if (row.heartRate != null) setHeartRate(String(row.heartRate));
