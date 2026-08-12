@@ -10,9 +10,9 @@ import { CurrentUser } from '../auth/current-user.decorator';
 export class VitalSignsController {
   constructor(private readonly vitalSignsService: VitalSignsService) {}
 
-  // Cổng lưu chỉ số sinh tồn AI: POST http://localhost:3000/vital-signs
+  // Lưu chỉ số nhập tay, Bluetooth hoặc mô phỏng có gắn nguồn dữ liệu
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('DOCTOR', 'ADMIN')
+  @Roles('PATIENT', 'DOCTOR', 'ADMIN')
   @Post()
   create(@Body() createVitalSignDto: CreateVitalSignDto, @CurrentUser() user: { sub: number; role: string }) {
     return this.vitalSignsService.create(createVitalSignDto, user);
