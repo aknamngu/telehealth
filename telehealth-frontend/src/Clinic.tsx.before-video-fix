@@ -1,4 +1,4 @@
-﻿import { socket } from './socket';
+import { socket } from './socket';
 import { useEffect, useRef, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getAuthToken, getAuthUser } from './auth';
@@ -109,12 +109,12 @@ function Clinic() {
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingMessage, setBookingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Lá»‹ch sá»­ bá»‡nh Ã¡n (cho BÃ¡c sÄ©)
+  // Lịch sử bệnh án (cho Bác sĩ)
   const [medicalHistory, setMedicalHistory] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Tráº¡ng thÃ¡i Ghi hÃ¬nh (Record Video)
+  // Trạng thái Ghi hình (Record Video)
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<BlobPart[]>([]);
@@ -124,7 +124,6 @@ function Clinic() {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamRef = useRef<MediaStream | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const appointmentIdRef = useRef(appointmentId);
   appointmentIdRef.current = appointmentId;
@@ -136,10 +135,10 @@ function Clinic() {
     fetch(`${API_URL}/consents/appointments/${appointmentId}/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then(async (response) => {
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message || 'KhÃ´ng thá»ƒ kiá»ƒm tra Ä‘á»“ng Ã½ chÃ­nh sÃ¡ch.');
+        if (!response.ok) throw new Error(payload.message || 'Không thể kiểm tra đồng ý chính sách.');
         setConsultationConsent(Boolean(payload.data?.accepted));
       })
-      .catch((error) => setConsentError(error instanceof Error ? error.message : 'KhÃ´ng thá»ƒ kiá»ƒm tra Ä‘á»“ng Ã½ chÃ­nh sÃ¡ch.'))
+      .catch((error) => setConsentError(error instanceof Error ? error.message : 'Không thể kiểm tra đồng ý chính sách.'))
       .finally(() => setConsentLoading(false));
   }, [appointmentId]);
 
@@ -153,14 +152,14 @@ function Clinic() {
         body: JSON.stringify({ consentAccepted: true, policyVersion: POLICY_VERSION }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message || 'KhÃ´ng thá»ƒ ghi nháº­n Ä‘á»“ng Ã½.');
+      if (!response.ok) throw new Error(payload.message || 'Không thể ghi nhận đồng ý.');
       setConsultationConsent(true);
     } catch (error) {
-      setConsentError(error instanceof Error ? error.message : 'KhÃ´ng thá»ƒ ghi nháº­n Ä‘á»“ng Ã½.');
+      setConsentError(error instanceof Error ? error.message : 'Không thể ghi nhận đồng ý.');
     } finally { setConsentSaving(false); }
   }
 
-  // â”€â”€â”€ 1. Khá»Ÿi Ä‘á»™ng Camera â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── 1. Khởi động Camera ───────────────────────────────────────────────────
   useEffect(() => {
     if (!consultationConsent) return;
     async function startCamera() {
@@ -169,10 +168,10 @@ function Clinic() {
         localStreamRef.current = stream;
         if (localVideoRef.current) localVideoRef.current.srcObject = stream;
         setCameraReady(true);
-        console.log('ðŸ“· Camera ready');
+        console.log('📷 Camera ready');
       } catch (err) {
-        console.error('Lá»—i webcam:', err);
-        alert('HÃ£y cáº¥p quyá»n truy cáº­p Camera Ä‘á»ƒ báº¯t Ä‘áº§u khÃ¡m!');
+        console.error('Lỗi webcam:', err);
+        alert('Hãy cấp quyền truy cập Camera để bắt đầu khám!');
       }
     }
     startCamera();
@@ -181,7 +180,7 @@ function Clinic() {
     };
   }, [consultationConsent]);
 
-  // â”€â”€â”€ 2. Táº£i danh sÃ¡ch BÃ¡c sÄ© tá»« API backend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── 2. Tải danh sách Bác sĩ từ API backend ──────────────────────────────
   useEffect(() => {
     fetch(`${API_URL}/doctors`)
       .then((r) => r.json())
@@ -191,32 +190,32 @@ function Clinic() {
           const docs: Doctor[] = records.map((d) => ({
             id: d.id,
             name: d.fullName,
-            specialty: d.doctorProfile?.specialty ?? 'Äa khoa',
+            specialty: d.doctorProfile?.specialty ?? 'Đa khoa',
           }));
 
           setDoctorsList(docs);
 
-          // Chá»n bÃ¡c sÄ© khá»›p vá»›i docId hoáº·c láº¥y bÃ¡c sÄ© Ä‘áº§u tiÃªn trong DB
+          // Chọn bác sĩ khớp với docId hoặc lấy bác sĩ đầu tiên trong DB
           const currentDoc = docs.find((d) => d.id === Number(docId)) ?? docs[0];
           setDoctor(currentDoc);
           setSelectedDoctorId(currentDoc.id);
         } else {
-          // Fallback náº¿u chÆ°a cÃ³ bÃ¡c sÄ©
-          const fallback = { id: 1, name: 'BS. Trá»±c tuyáº¿n', specialty: 'Äa khoa' };
+          // Fallback nếu chưa có bác sĩ
+          const fallback = { id: 1, name: 'BS. Trực tuyến', specialty: 'Đa khoa' };
           setDoctorsList([fallback]);
           setDoctor(fallback);
           setSelectedDoctorId(1);
         }
       })
       .catch(() => {
-        const fallback = { id: 1, name: 'BS. Trá»±c tuyáº¿n', specialty: 'Äa khoa' };
+        const fallback = { id: 1, name: 'BS. Trực tuyến', specialty: 'Đa khoa' };
         setDoctorsList([fallback]);
         setDoctor(fallback);
         setSelectedDoctorId(1);
       });
   }, [docId]);
 
-  // â”€â”€â”€ 4. Scroll chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── 4. Scroll chat ───────────────────────────────────────────────────────
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   // Load chat history
@@ -244,7 +243,7 @@ function Clinic() {
       .catch(err => console.error("Error loading messages:", err));
   }, [appointmentId]);
 
-  // â”€â”€â”€ 5. Táº¡o RTCPeerConnection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── 5. Tạo RTCPeerConnection ──────────────────────────────────────────────
   useEffect(() => {
     const pc = new RTCPeerConnection({
       iceServers: [
@@ -256,13 +255,13 @@ function Clinic() {
 
     pc.onicecandidate = (e) => {
       if (e.candidate) {
-        console.log('ðŸ“¡ Sending ICE candidate');
+        console.log('📡 Sending ICE candidate');
         socket.emit('candidate', { candidate: e.candidate, appointmentId: appointmentIdRef.current });
       }
     };
 
     pc.ontrack = (e) => {
-      console.log('ðŸŽ¥ Remote track received!');
+      console.log('🎥 Remote track received!');
       if (remoteVideoRef.current && e.streams[0]) {
         remoteVideoRef.current.srcObject = e.streams[0];
       }
@@ -270,7 +269,7 @@ function Clinic() {
     };
 
     pc.onconnectionstatechange = () => {
-      console.log('ðŸ”— Connection state:', pc.connectionState);
+      console.log('🔗 Connection state:', pc.connectionState);
       if (pc.connectionState === 'connected') setCallStatus('connected');
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') setCallStatus('ended');
     };
@@ -281,7 +280,7 @@ function Clinic() {
     };
   }, [appointmentId]);
 
-  // â”€â”€â”€ 5.1 Xá»­ lÃ½ dá»n dáº¹p khi thoÃ¡t trang (trÃ¡nh káº¹t tráº¡ng thÃ¡i báº­n) â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── 5.1 Xử lý dọn dẹp khi thoát trang (tránh kẹt trạng thái bận) ─────────
   const callStatusRef = useRef(callStatus);
   useEffect(() => {
     callStatusRef.current = callStatus;
@@ -301,12 +300,12 @@ function Clinic() {
     };
   }, [appointmentId]);
 
-  // â”€â”€â”€ 6. Setup Socket Listeners (Xá»­ lÃ½ Gá»i thÆ°á»ng, BÃ¡o báº­n, Cáº¥p cá»©u) â”€â”€â”€â”€â”€â”€
+  // ─── 6. Setup Socket Listeners (Xử lý Gọi thường, Báo bận, Cấp cứu) ──────
   useEffect(() => {
     if (!cameraReady || !appointmentId) return;
 
     socket.emit('joinRoom', appointmentId);
-    console.log(`ðŸšª Joined room: room_${appointmentId}`);
+    console.log(`🚪 Joined room: room_${appointmentId}`);
 
     if (authUser?.role === 'DOCTOR') {
       socket.emit('joinRoom', `doctor_${authUser.id}`);
@@ -318,13 +317,13 @@ function Clinic() {
       if (pc.getSenders().length > 0) return;
       localStreamRef.current.getTracks().forEach((track) => {
         pc.addTrack(track, localStreamRef.current!);
-        console.log('ðŸŽ™ï¸ Added local track:', track.kind);
+        console.log('🎙️ Added local track:', track.kind);
       });
     };
 
     const handleCallAccept = async () => {
       if (authUser?.role !== 'PATIENT') return;
-      console.log('âœ… Patient received call:accept, creating offer...');
+      console.log('✅ Patient received call:accept, creating offer...');
       try {
         addLocalTracks();
         const pc = pcRef.current!;
@@ -333,13 +332,13 @@ function Clinic() {
         socket.emit('offer', { offer, appointmentId });
         setCallStatus('calling');
       } catch (err) {
-        console.error('Lá»—i táº¡o offer:', err);
+        console.error('Lỗi tạo offer:', err);
       }
     };
 
     const handleOffer = async (offer: RTCSessionDescriptionInit) => {
       if (authUser?.role !== 'DOCTOR') return;
-      console.log('ðŸ“¥ Doctor received offer, creating answer...');
+      console.log('📥 Doctor received offer, creating answer...');
       try {
         addLocalTracks();
         const pc = pcRef.current!;
@@ -348,17 +347,17 @@ function Clinic() {
         await pc.setLocalDescription(answer);
         socket.emit('answer', { answer, appointmentId });
       } catch (err) {
-        console.error('Lá»—i táº¡o answer:', err);
+        console.error('Lỗi tạo answer:', err);
       }
     };
 
     const handleAnswer = async (answer: RTCSessionDescriptionInit) => {
       if (authUser?.role !== 'PATIENT') return;
-      console.log('ðŸ“¥ Patient received answer');
+      console.log('📥 Patient received answer');
       try {
         await pcRef.current!.setRemoteDescription(new RTCSessionDescription(answer));
       } catch (err) {
-        console.error('Lá»—i set answer:', err);
+        console.error('Lỗi set answer:', err);
       }
     };
 
@@ -368,20 +367,20 @@ function Clinic() {
           await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
         }
       } catch (err) {
-        console.error('Lá»—i add candidate:', err);
+        console.error('Lỗi add candidate:', err);
       }
     };
 
     const handleCallBusy = (payload: { message: string }) => {
-      console.log('âš ï¸ Received call:busy event:', payload);
+      console.log('⚠️ Received call:busy event:', payload);
       setCallStatus('busy');
-      setBusyMessage(payload.message || 'BÃ¡c sÄ© hiá»‡n Ä‘ang trong phiÃªn tÆ° váº¥n khÃ¡c. Vui lÃ²ng Ä‘áº·t lá»‹ch hoáº·c chá» bÃ¡c sÄ© hoÃ n thÃ nh!');
+      setBusyMessage(payload.message || 'Bác sĩ hiện đang trong phiên tư vấn khác. Vui lòng đặt lịch hoặc chờ bác sĩ hoàn thành!');
     };
 
     const handleCallDecline = () => setCallStatus('declined');
 
     const handleCallEnd = (data?: { reason?: string; message?: string }) => {
-      console.log('ðŸ“´ Call ended', data);
+      console.log('📴 Call ended', data);
       setCallStatus('ended');
       pcRef.current?.close();
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
@@ -398,7 +397,7 @@ function Clinic() {
       setMessages((prev) => {
         if (prev.some(m => m.id === msg.id)) return prev; // Avoid duplicates
         
-        // Cá»‘ gáº¯ng parse sender tá»« server
+        // Cố gắng parse sender từ server
         const senderRole = msg.sender?.role || msg.senderRole;
         const mappedSender = senderRole === 'DOCTOR' ? 'doctor' : 'patient';
         
@@ -423,21 +422,21 @@ function Clinic() {
     socket.on('newMessage', handleNewMessage);
 
     if (authUser?.role === 'DOCTOR' && autoAccept) {
-      console.log('ðŸ©º Doctor autoAccept: emitting call:accept');
+      console.log('🩺 Doctor autoAccept: emitting call:accept');
       addLocalTracks();
       socket.emit('call:accept', { appointmentId, doctorId: authUser.id, fromName: authUser.fullName });
       setCallStatus('calling');
     }
 
     if (authUser?.role === 'PATIENT' && isEmergencyParam) {
-      console.log('ðŸš¨ Patient auto SOS: emitting call:emergency');
+      console.log('🚨 Patient auto SOS: emitting call:emergency');
       setCallStatus('calling');
       setIsEmergencyCall(true);
       socket.emit('call:emergency', {
         appointmentId,
         doctorId: Number(docId),
-        fromName: authUser?.fullName ?? 'Bá»‡nh nhÃ¢n kháº©n cáº¥p',
-        emergencyType: 'Cáº¥p cá»©u nguy ká»‹ch',
+        fromName: authUser?.fullName ?? 'Bệnh nhân khẩn cấp',
+        emergencyType: 'Cấp cứu nguy kịch',
       });
     }
 
@@ -453,7 +452,7 @@ function Clinic() {
     };
   }, [cameraReady, appointmentId, authUser?.id, authUser?.fullName, authUser?.role, autoAccept, isEmergencyParam, docId]);
 
-  // â”€â”€â”€ Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Actions ──────────────────────────────────────────────────────────────
   const startCall = useCallback(() => {
     if (callStatus !== 'idle') return;
     const targetDoctorId = selectedDoctorId || doctor?.id || Number(docId);
@@ -464,13 +463,13 @@ function Clinic() {
     socket.emit('call:invite', {
       appointmentId,
       doctorId: targetDoctorId,
-      fromName: authUser?.fullName ?? 'Bá»‡nh nhÃ¢n',
+      fromName: authUser?.fullName ?? 'Bệnh nhân',
       fromRole: authUser?.role ?? 'PATIENT',
     });
-    console.log('ðŸ“ž call:invite emitted', { appointmentId, doctorId: targetDoctorId });
+    console.log('📞 call:invite emitted', { appointmentId, doctorId: targetDoctorId });
   }, [callStatus, selectedDoctorId, doctor?.id, docId, appointmentId, authUser?.fullName, authUser?.role]);
 
-  // Táº£i danh sÃ¡ch giá» ráº£nh cá»§a bÃ¡c sÄ© cho Modal Äáº·t Lá»‹ch
+  // Tải danh sách giờ rảnh của bác sĩ cho Modal Đặt Lịch
   useEffect(() => {
     if (selectedDoctorId && scheduleDate) {
       setLoadingSlots(true);
@@ -493,15 +492,15 @@ function Clinic() {
     }
   }, [selectedDoctorId, scheduleDate]);
 
-  // Äáº·t lá»‹ch khÃ¡m theo slot
+  // Đặt lịch khám theo slot
   const handleScheduleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!authUser) {
-      setBookingMessage({ type: 'error', text: 'Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ Ä‘áº·t lá»‹ch!' });
+      setBookingMessage({ type: 'error', text: 'Vui lòng đăng nhập để đặt lịch!' });
       return;
     }
     if (!selectedSlot) {
-      setBookingMessage({ type: 'error', text: 'Vui lÃ²ng chá»n khung giá» khÃ¡m!' });
+      setBookingMessage({ type: 'error', text: 'Vui lòng chọn khung giờ khám!' });
       return;
     }
 
@@ -535,12 +534,12 @@ function Clinic() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message ?? 'ÄÃ£ cÃ³ lá»—i xáº£y ra khi Ä‘áº·t lá»‹ch!');
+        throw new Error(data.message ?? 'Đã có lỗi xảy ra khi đặt lịch!');
       }
 
       setBookingMessage({
         type: 'success',
-        text: `Äáº·t lá»‹ch khÃ¡m vá»›i ${doctor?.name ?? 'BÃ¡c sÄ©'} (${slot.startTime} - ${slot.endTime} ngÃ y ${scheduleDate}) thÃ nh cÃ´ng!`,
+        text: `Đặt lịch khám với ${doctor?.name ?? 'Bác sĩ'} (${slot.startTime} - ${slot.endTime} ngày ${scheduleDate}) thành công!`,
       });
       setTimeout(() => {
         setShowScheduleModal(false);
@@ -549,7 +548,7 @@ function Clinic() {
     } catch (err) {
       setBookingMessage({
         type: 'error',
-        text: err instanceof Error ? err.message : 'KhÃ´ng thá»ƒ Ä‘áº·t lá»‹ch trÃ¹ng!',
+        text: err instanceof Error ? err.message : 'Không thể đặt lịch trùng!',
       });
     } finally {
       setBookingLoading(false);
@@ -565,7 +564,7 @@ function Clinic() {
     }
 
     if (!diagnosis.trim() || !medicines.trim()) {
-      setPrescriptionMessage({ type: 'error', text: 'Vui lÃ²ng Ä‘iá»n Ä‘áº§y Ä‘á»§ Cháº©n Ä‘oÃ¡n vÃ  ÄÆ¡n thuá»‘c!' });
+      setPrescriptionMessage({ type: 'error', text: 'Vui lòng điền đầy đủ Chẩn đoán và Đơn thuốc!' });
       return;
     }
 
@@ -588,21 +587,21 @@ function Clinic() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message ?? 'ÄÃ£ cÃ³ lá»—i xáº£y ra khi kÃª Ä‘Æ¡n!');
+        throw new Error(data.message ?? 'Đã có lỗi xảy ra khi kê đơn!');
       }
 
       setPrescriptionMessage({
         type: 'success',
-        text: 'ÄÃ£ hoÃ n táº¥t ca khÃ¡m vÃ  gá»­i Ä‘Æ¡n thuá»‘c cho bá»‡nh nhÃ¢n thÃ nh cÃ´ng!',
+        text: 'Đã hoàn tất ca khám và gửi đơn thuốc cho bệnh nhân thành công!',
       });
       setTimeout(() => {
         setShowPrescriptionModal(false);
-        navigate('/'); // Äiá»u hÆ°á»›ng vá» trang chá»§ sau khi hoÃ n thÃ nh
+        navigate('/'); // Điều hướng về trang chủ sau khi hoàn thành
       }, 2500);
     } catch (err) {
       setPrescriptionMessage({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Lá»—i khÃ´ng xÃ¡c Ä‘á»‹nh!',
+        text: err instanceof Error ? err.message : 'Lỗi không xác định!',
       });
     } finally {
       setPrescriptionLoading(false);
@@ -637,13 +636,13 @@ function Clinic() {
 
     setLoadingHistory(true);
     try {
-      // 1. Láº¥y thÃ´ng tin cuá»™c háº¹n Ä‘á»ƒ biáº¿t patientId
+      // 1. Lấy thông tin cuộc hẹn để biết patientId
       const res = await fetch(`${API_URL}/appointments`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       const appt = data.data?.find((a: any) => a.id === Number(appointmentId));
-      if (!appt?.patientId) throw new Error("KhÃ´ng tÃ¬m tháº¥y bá»‡nh nhÃ¢n");
+      if (!appt?.patientId) throw new Error("Không tìm thấy bệnh nhân");
 
-      // 2. Gá»i API láº¥y lá»‹ch sá»­ AI
+      // 2. Gọi API lấy lịch sử AI
       const histRes = await fetch(`${API_URL}/appointments/patient/${appt.patientId}/history`, { headers: { Authorization: `Bearer ${token}` } });
       const histData = await histRes.json();
       setMedicalHistory(histData.data || []);
@@ -656,9 +655,9 @@ function Clinic() {
   };
 
   const startRecording = () => {
-    // 1. Gá»™p stream local vÃ  remote
+    // 1. Gộp stream local và remote
     const remoteStream = (window as any)._tempRemoteStream || remoteVideoRef.current?.srcObject;
-    if (!localStreamRef.current && !remoteStream) return alert('ChÆ°a cÃ³ luá»“ng video Ä‘á»ƒ ghi hÃ¬nh');
+    if (!localStreamRef.current && !remoteStream) return alert('Chưa có luồng video để ghi hình');
 
     const tracks: MediaStreamTrack[] = [];
     if (localStreamRef.current) tracks.push(...localStreamRef.current.getTracks());
@@ -667,7 +666,7 @@ function Clinic() {
     if (tracks.length === 0) return;
     const combinedStream = new MediaStream(tracks);
 
-    // 2. Khá»Ÿi táº¡o MediaRecorder
+    // 2. Khởi tạo MediaRecorder
     recordedChunksRef.current = [];
     try {
       const mr = new MediaRecorder(combinedStream, { mimeType: 'video/webm; codecs=vp9' });
@@ -695,8 +694,8 @@ function Clinic() {
       mr.start();
       setIsRecording(true);
     } catch (e) {
-      console.error('Lá»—i khá»Ÿi táº¡o MediaRecorder:', e);
-      alert('TrÃ¬nh duyá»‡t khÃ´ng há»— trá»£ ghi hÃ¬nh hoáº·c cáº¥u hÃ¬nh lá»—i.');
+      console.error('Lỗi khởi tạo MediaRecorder:', e);
+      alert('Trình duyệt không hỗ trợ ghi hình hoặc cấu hình lỗi.');
     }
   };
 
@@ -740,7 +739,7 @@ function Clinic() {
     if (!file) return;
     
     if (file.size > 2 * 1024 * 1024) {
-      alert("File áº£nh quÃ¡ lá»›n, vui lÃ²ng chá»n file < 2MB");
+      alert("File ảnh quá lớn, vui lòng chọn file < 2MB");
       return;
     }
 
@@ -772,13 +771,13 @@ function Clinic() {
       {!consultationConsent && (
         <div className="fixed inset-0 z-[9998] grid place-items-center bg-slate-950/80 p-4 backdrop-blur-md">
           <section className="w-full max-w-xl rounded-[2rem] bg-white p-7 shadow-2xl">
-            <div className="flex items-start gap-3"><ShieldCheck className="mt-1 h-7 w-7 text-emerald-600" /><div><p className="text-xs font-bold uppercase tracking-[.2em] text-emerald-700">FR30 Â· #{appointmentId}</p><h1 className="mt-1 text-2xl font-black">{t('consultationConsentTitle')}</h1></div></div>
+            <div className="flex items-start gap-3"><ShieldCheck className="mt-1 h-7 w-7 text-emerald-600" /><div><p className="text-xs font-bold uppercase tracking-[.2em] text-emerald-700">FR30 · #{appointmentId}</p><h1 className="mt-1 text-2xl font-black">{t('consultationConsentTitle')}</h1></div></div>
             <p className="mt-5 text-sm leading-7 text-slate-600">{t('consultationConsentText')}</p>
-            {consentLoading ? <p className="mt-5 text-sm font-semibold text-sky-700">{language === 'vi' ? 'Äang kiá»ƒm tra tráº¡ng thÃ¡i Ä‘á»“ng Ã½...' : 'Checking consent status...'}</p> : <>
+            {consentLoading ? <p className="mt-5 text-sm font-semibold text-sky-700">{language === 'vi' ? 'Đang kiểm tra trạng thái đồng ý...' : 'Checking consent status...'}</p> : <>
               <button type="button" onClick={() => { setPolicyOpened(true); setPolicyVisible(true); }} className="mt-5 text-sm font-bold text-sky-700 underline">{t('readPolicy')}</button>
               <label className="mt-4 flex items-start gap-3 rounded-2xl bg-slate-50 p-4 text-sm"><input type="checkbox" disabled={!policyOpened} checked={consentChecked} onChange={(event) => setConsentChecked(event.target.checked)} className="mt-1" /><span>{t('acceptConsultation')}</span></label>
               {consentError && <p className="mt-4 rounded-2xl bg-rose-50 p-3 text-sm font-semibold text-rose-700">{consentError}</p>}
-              <div className="mt-6 flex gap-3"><button type="button" onClick={() => navigate('/dashboard')} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold">{language === 'vi' ? 'Quay láº¡i' : 'Go back'}</button><button type="button" onClick={acceptConsultationConsent} disabled={!consentChecked || consentSaving} className="flex-[2] rounded-2xl bg-slate-950 px-4 py-3 text-sm font-bold text-white disabled:opacity-40">{consentSaving ? t('saving') : t('continueClinic')}</button></div>
+              <div className="mt-6 flex gap-3"><button type="button" onClick={() => navigate('/dashboard')} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold">{language === 'vi' ? 'Quay lại' : 'Go back'}</button><button type="button" onClick={acceptConsultationConsent} disabled={!consentChecked || consentSaving} className="flex-[2] rounded-2xl bg-slate-950 px-4 py-3 text-sm font-bold text-white disabled:opacity-40">{consentSaving ? t('saving') : t('continueClinic')}</button></div>
             </>}
           </section>
           <PrivacyPolicyModal open={policyVisible} onClose={() => setPolicyVisible(false)} />
@@ -794,15 +793,15 @@ function Clinic() {
               className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700"
             >
               <ArrowLeft className="h-4 w-4" />
-              Vá» trang chá»§
+              Về trang chủ
             </button>
             <div className="hidden items-center gap-3 sm:flex">
               <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-sky-600 via-cyan-500 to-emerald-500 text-xs font-black tracking-[0.2em] text-white shadow-lg shadow-sky-500/20">
                 OS
               </div>
               <div>
-                <p className="text-sm font-extrabold text-slate-950">PhÃ²ng khÃ¡m trá»±c tuyáº¿n</p>
-                <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-slate-500">Workspace tÆ° váº¥n live</p>
+                <p className="text-sm font-extrabold text-slate-950">Phòng khám trực tuyến</p>
+                <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-slate-500">Workspace tư vấn live</p>
               </div>
             </div>
           </div>
@@ -816,7 +815,7 @@ function Clinic() {
                   className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3.5 py-2 text-xs font-bold text-sky-700 hover:bg-sky-100 transition"
                 >
                   <Clock className="h-4 w-4" />
-                  Äáº·t lá»‹ch háº¹n
+                  Đặt lịch hẹn
                 </button>
               </>
             )}
@@ -824,12 +823,12 @@ function Clinic() {
             {isConnected && (
               <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                {isEmergencyCall ? 'Cáº¥p cá»©u SOS Ä‘ang káº¿t ná»‘i' : 'Äang káº¿t ná»‘i'}
+                {isEmergencyCall ? 'Cấp cứu SOS đang kết nối' : 'Đang kết nối'}
               </div>
             )}
 
             <div className="rounded-full border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-bold text-sky-700">
-              MÃ£ cuá»™c háº¹n #{appointmentId}
+              Mã cuộc hẹn #{appointmentId}
             </div>
           </div>
         </div>
@@ -847,48 +846,48 @@ function Clinic() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">PhÃ²ng video</p>
+                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Phòng video</p>
                     {isEmergencyCall && (
                       <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-black uppercase text-rose-700">
-                        ðŸš¨ Ca Cáº¥p Cá»©u SOS
+                        🚨 Ca Cấp Cứu SOS
                       </span>
                     )}
                   </div>
-                  <h1 className="text-lg font-black tracking-tight text-slate-950">{doctor?.name ?? 'Äang táº£i...'}</h1>
+                  <h1 className="text-lg font-black tracking-tight text-slate-950">{doctor?.name ?? 'Đang tải...'}</h1>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700">
                   <ShieldCheck className="h-4 w-4" />
-                  Káº¿t ná»‘i báº£o máº­t
+                  Kết nối bảo mật
                 </div>
 
-                {/* NÃºt Gá»i thÆ°á»ng */}
+                {/* Nút Gọi thường */}
                 {callStatus === 'idle' && authUser?.role !== 'DOCTOR' && (
                   <button
                     onClick={startCall}
                     className="flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2 text-sm font-bold text-white shadow-lg transition hover:bg-sky-700 active:scale-95"
                   >
                     <Video className="h-4 w-4" />
-                    Báº¯t Ä‘áº§u gá»i
+                    Bắt đầu gọi
                   </button>
                 )}
 
-                {/* NÃºt Káº¿t thÃºc khi Ä‘ang gá»i hoáº·c Ä‘Ã£ káº¿t ná»‘i */}
+                {/* Nút Kết thúc khi đang gọi hoặc đã kết nối */}
                 {(isCalling || isConnected) && (
                   <button
                     onClick={endCall}
                     className="flex items-center gap-2 rounded-full bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-lg transition hover:bg-rose-700 active:scale-95"
                   >
                     <PhoneOff className="h-4 w-4" />
-                    Káº¿t thÃºc
+                    Kết thúc
                   </button>
                 )}
               </div>
             </div>
 
-            {/* â•â•â• VIDEO AREA â•â•â• */}
+            {/* ═══ VIDEO AREA ═══ */}
             <div className="relative">
               {/* CONNECTED: Remote video + Local PiP */}
               {isConnected ? (
@@ -901,13 +900,13 @@ function Clinic() {
                   />
                   <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-white/20 bg-black/50 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
                     {isEmergencyCall && <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />}
-                    {authUser?.role === 'PATIENT' ? (doctor?.name ?? 'BÃ¡c sÄ©') : 'Bá»‡nh nhÃ¢n'}
+                    {authUser?.role === 'PATIENT' ? (doctor?.name ?? 'Bác sĩ') : 'Bệnh nhân'}
                   </div>
 
                   {/* Local PiP */}
                   <div className="absolute bottom-4 right-4 z-10 h-32 w-48 overflow-hidden rounded-2xl border-2 border-white/30 bg-black shadow-xl">
                     <video ref={localVideoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
-                    <div className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">Báº N</div>
+                    <div className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">BẠN</div>
                   </div>
 
                   {/* Controls overlay */}
@@ -915,7 +914,7 @@ function Clinic() {
                     <button
                       onClick={toggleMic}
                       className={`grid h-11 w-11 place-items-center rounded-full border shadow-lg backdrop-blur transition active:scale-90 ${isMuted ? 'border-rose-400 bg-rose-500/80 text-white' : 'border-white/20 bg-white/20 text-white hover:bg-white/30'}`}
-                      title={isMuted ? 'Báº­t mic' : 'Táº¯t mic'}
+                      title={isMuted ? 'Bật mic' : 'Tắt mic'}
                     >
                       <MicOff className="h-4 w-4" />
                     </button>
@@ -928,7 +927,7 @@ function Clinic() {
                     <button
                       onClick={toggleVideo}
                       className={`grid h-11 w-11 place-items-center rounded-full border shadow-lg backdrop-blur transition active:scale-90 ${isVideoOff ? 'border-rose-400 bg-rose-500/80 text-white' : 'border-white/20 bg-white/20 text-white hover:bg-white/30'}`}
-                      title={isVideoOff ? 'Báº­t camera' : 'Táº¯t camera'}
+                      title={isVideoOff ? 'Bật camera' : 'Tắt camera'}
                     >
                       <VideoOff className="h-4 w-4" />
                     </button>
@@ -936,7 +935,7 @@ function Clinic() {
                       <button
                         onClick={isRecording ? stopRecording : startRecording}
                         className={`grid h-11 w-11 place-items-center rounded-full border shadow-lg backdrop-blur transition active:scale-90 ${isRecording ? 'border-rose-400 bg-rose-500 text-white animate-pulse' : 'border-white/20 bg-white/20 text-white hover:bg-white/30'}`}
-                        title={isRecording ? 'Dá»«ng ghi hÃ¬nh' : 'Ghi hÃ¬nh phiÃªn khÃ¡m'}
+                        title={isRecording ? 'Dừng ghi hình' : 'Ghi hình phiên khám'}
                       >
                         <div className={`h-3 w-3 rounded-full ${isRecording ? 'bg-white' : 'bg-rose-500'}`} />
                       </button>
@@ -950,70 +949,70 @@ function Clinic() {
                     {callStatus === 'idle' && (
                       <div className="max-w-xl space-y-3">
                         <div className="mx-auto grid h-20 w-20 place-items-center rounded-[1.75rem] border border-white/10 bg-white/10 text-4xl shadow-2xl backdrop-blur">
-                          ðŸ©º
+                          🩺
                         </div>
-                        <p className="text-2xl font-black tracking-tight">Sáºµn sÃ ng tÆ° váº¥n</p>
+                        <p className="text-2xl font-black tracking-tight">Sẵn sàng tư vấn</p>
                         <p className="text-sm leading-7 text-slate-300">
                           {authUser?.role === 'DOCTOR'
-                            ? 'Bá»‡nh nhÃ¢n chÆ°a báº¯t Ä‘áº§u cuá»™c gá»i.'
-                            : 'Báº¥m "Báº¯t Ä‘áº§u gá»i" Ä‘á»ƒ yÃªu cáº§u bÃ¡c sÄ© tham gia tÆ° váº¥n.'}
+                            ? 'Bệnh nhân chưa bắt đầu cuộc gọi.'
+                            : 'Bấm "Bắt đầu gọi" để yêu cầu bác sĩ tham gia tư vấn.'}
                         </p>
                       </div>
                     )}
 
-                    {/* ÄANG Gá»ŒI Cáº¤P Cá»¨U NGUY Cáº¤P */}
+                    {/* ĐANG GỌI CẤP CỨU NGUY CẤP */}
                     {isCalling && isEmergencyCall && (
                       <div className="rounded-3xl border border-rose-500/40 bg-rose-500/10 px-8 py-6 shadow-2xl backdrop-blur animate-pulse">
                         <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-rose-600 text-3xl">
-                          ðŸ†˜
+                          🆘
                         </div>
                         <p className="text-2xl font-black text-rose-300 uppercase tracking-wide">
-                          ÄANG PHÃT BÃO Äá»˜NG Cáº¤P Cá»¨U SOS
+                          ĐANG PHÁT BÁO ĐỘNG CẤP CỨU SOS
                         </p>
                         <p className="mt-2 max-w-md text-sm leading-6 text-slate-200">
-                          Há»‡ thá»‘ng Ä‘ang Æ°u tiÃªn gá»­i thÃ´ng bÃ¡o nguy cáº¥p tá»›i toÃ n bá»™ bÃ¡c sÄ© trá»±c tuyáº¿n. Vui lÃ²ng giá»¯ mÃ¡y!
+                          Hệ thống đang ưu tiên gửi thông báo nguy cấp tới toàn bộ bác sĩ trực tuyến. Vui lòng giữ máy!
                         </p>
                       </div>
                     )}
 
-                    {/* ÄANG Gá»ŒI THÆ¯á»œNG */}
+                    {/* ĐANG GỌI THƯỜNG */}
                     {isCalling && !isEmergencyCall && (
                       <div className="rounded-3xl border border-white/10 bg-white/5 px-8 py-6 shadow-lg backdrop-blur">
                         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center">
                           <span className="relative flex h-12 w-12">
                             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-40" />
-                            <span className="relative inline-flex h-12 w-12 items-center justify-center rounded-full bg-sky-500 text-2xl">ðŸ“ž</span>
+                            <span className="relative inline-flex h-12 w-12 items-center justify-center rounded-full bg-sky-500 text-2xl">📞</span>
                           </span>
                         </div>
                         <p className="text-xl font-bold">
-                          {authUser?.role === 'DOCTOR' ? 'Äang káº¿t ná»‘i vá»›i bá»‡nh nhÃ¢n...' : 'Äang chá» bÃ¡c sÄ© nháº­n cuá»™c gá»i'}
+                          {authUser?.role === 'DOCTOR' ? 'Đang kết nối với bệnh nhân...' : 'Đang chờ bác sĩ nhận cuộc gọi'}
                         </p>
-                        <p className="mt-2 text-sm text-slate-300">PhiÃªn tÆ° váº¥n sáº½ Ä‘Æ°á»£c káº¿t ná»‘i ngay khi cáº£ 2 sáºµn sÃ ng.</p>
+                        <p className="mt-2 text-sm text-slate-300">Phiên tư vấn sẽ được kết nối ngay khi cả 2 sẵn sàng.</p>
                       </div>
                     )}
 
-                    {/* BÃC SÄ¨ Báº¬N CUá»˜C Gá»ŒI KHIáº¾N Bá»†NH NHÃ‚N KHÃ”NG Gá»ŒI ÄÆ¯á»¢C */}
+                    {/* BÁC SĨ BẬN CUỘC GỌI KHIẾN BỆNH NHÂN KHÔNG GỌI ĐƯỢC */}
                     {isBusy && (
                       <div className="max-w-md rounded-3xl border border-amber-400/40 bg-amber-500/15 p-6 backdrop-blur text-center">
                         <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-amber-500 text-slate-950 font-black">
-                          âš ï¸
+                          ⚠️
                         </div>
-                        <p className="text-xl font-black text-amber-300">BÃC SÄ¨ ÄANG Báº¬N TÆ¯ Váº¤N</p>
+                        <p className="text-xl font-black text-amber-300">BÁC SĨ ĐANG BẬN TƯ VẤN</p>
                         <p className="mt-2 text-sm leading-6 text-slate-200">
-                          {busyMessage || 'BÃ¡c sÄ© hiá»‡n Ä‘ang trong phiÃªn tÆ° váº¥n trá»±c tiáº¿p vá»›i bá»‡nh nhÃ¢n khÃ¡c. Báº¡n vui lÃ²ng Äáº·t lá»‹ch háº¹n hoáº·c chá» Ã­t phÃºt!'}
+                          {busyMessage || 'Bác sĩ hiện đang trong phiên tư vấn trực tiếp với bệnh nhân khác. Bạn vui lòng Đặt lịch hẹn hoặc chờ ít phút!'}
                         </p>
                         <div className="mt-5 flex justify-center gap-3">
                           <button
                             onClick={() => setShowScheduleModal(true)}
                             className="rounded-full bg-sky-500 px-5 py-2 text-xs font-bold text-white shadow hover:bg-sky-600 transition"
                           >
-                            ðŸ“… Äáº·t lá»‹ch khÃ¡m
+                            📅 Đặt lịch khám
                           </button>
                           <button
                             onClick={() => setCallStatus('idle')}
                             className="rounded-full bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/20 transition"
                           >
-                            ÄÃ³ng
+                            Đóng
                           </button>
                         </div>
                       </div>
@@ -1021,27 +1020,27 @@ function Clinic() {
 
                     {callStatus === 'declined' && (
                       <div className="rounded-3xl border border-rose-400/30 bg-rose-500/10 px-8 py-6 backdrop-blur">
-                        <p className="text-xl font-bold text-rose-300">Cuá»™c gá»i Ä‘Ã£ bá»‹ tá»« chá»‘i</p>
+                        <p className="text-xl font-bold text-rose-300">Cuộc gọi đã bị từ chối</p>
                         <button onClick={() => setCallStatus('idle')} className="mt-4 rounded-full bg-white/10 px-5 py-2 text-sm font-semibold hover:bg-white/20">
-                          Thá»­ láº¡i
+                          Thử lại
                         </button>
                       </div>
                     )}
 
                     {callStatus === 'ended' && (
                       <div className="rounded-3xl border border-white/10 bg-white/5 px-8 py-6 backdrop-blur">
-                        <p className="text-xl font-bold">Cuá»™c gá»i Ä‘Ã£ káº¿t thÃºc</p>
+                        <p className="text-xl font-bold">Cuộc gọi đã kết thúc</p>
                         <button onClick={() => setCallStatus('idle')} className="mt-4 rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold hover:bg-sky-600">
-                          Gá»i láº¡i
+                          Gọi lại
                         </button>
                       </div>
                     )}
                   </div>
 
-                  {/* Local camera preview nhá» gÃ³c pháº£i */}
+                  {/* Local camera preview nhỏ góc phải */}
                   <div className="absolute bottom-5 right-5 h-32 w-48 overflow-hidden rounded-2xl border border-white/20 bg-black/50 shadow-lg">
                     <video ref={localVideoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
-                    <div className="absolute left-2 top-2 rounded bg-black/50 px-2 py-0.5 text-[10px] font-bold text-white">Báº N</div>
+                    <div className="absolute left-2 top-2 rounded bg-black/50 px-2 py-0.5 text-[10px] font-bold text-white">BẠN</div>
                   </div>
                 </div>
               )}
@@ -1058,20 +1057,20 @@ function Clinic() {
           <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.24em] text-sky-700">BÃ¡c sÄ© tÆ° váº¥n</p>
-                <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">{doctor?.name ?? 'Äang táº£i...'}</h2>
-                <p className="mt-1 text-sm text-slate-500">{doctor?.specialty ?? 'ChuyÃªn khoa'}</p>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-sky-700">Bác sĩ tư vấn</p>
+                <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">{doctor?.name ?? 'Đang tải...'}</h2>
+                <p className="mt-1 text-sm text-slate-500">{doctor?.specialty ?? 'Chuyên khoa'}</p>
               </div>
               <div className="grid h-14 w-14 place-items-center rounded-3xl bg-slate-950 text-white">
                 <Stethoscope className="h-6 w-6" />
               </div>
             </div>
 
-            {/* Chá»n bÃ¡c sÄ© khÃ¡c */}
+            {/* Chọn bác sĩ khác */}
             {doctorsList.length > 1 && (
               <div className="mt-4">
                 <label className="block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-1">
-                  Äá»•i bÃ¡c sÄ© tÆ° váº¥n:
+                  Đổi bác sĩ tư vấn:
                 </label>
                 <select
                   value={selectedDoctorId}
@@ -1096,43 +1095,43 @@ function Clinic() {
               <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
                 <span className="flex items-center gap-2 font-semibold text-slate-500">
                   <CalendarDays className="h-4 w-4 text-sky-600" />
-                  MÃ£ cuá»™c háº¹n
+                  Mã cuộc hẹn
                 </span>
                 <span className="font-bold text-slate-950">#{appointmentId}</span>
               </div>
               <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
                 <span className="flex items-center gap-2 font-semibold text-slate-500">
                   <Activity className="h-4 w-4 text-emerald-600" />
-                  Tráº¡ng thÃ¡i
+                  Trạng thái
                 </span>
                 <span className={`font-bold ${isConnected ? 'text-emerald-600' : isCalling ? 'text-amber-600' : isBusy ? 'text-rose-600' : 'text-emerald-600'}`}>
-                  {isConnected ? 'Äang káº¿t ná»‘i' : isCalling ? 'Äang gá»i...' : isBusy ? 'BÃ¡c sÄ© báº­n' : 'Sáºµn sÃ ng'}
+                  {isConnected ? 'Đang kết nối' : isCalling ? 'Đang gọi...' : isBusy ? 'Bác sĩ bận' : 'Sẵn sàng'}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Lá»‹ch sá»­ khÃ¡m bá»‡nh (Chá»‰ hiá»ƒn thá»‹ cho BÃ¡c sÄ©) */}
+          {/* Lịch sử khám bệnh (Chỉ hiển thị cho Bác sĩ) */}
           {authUser?.role === 'DOCTOR' && (
             <div className="flex flex-col overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Bá»‡nh Ã¡n</p>
-                  <h3 className="mt-1 text-lg font-black tracking-tight text-slate-950">Lá»‹ch sá»­ khÃ¡m AI</h3>
+                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Bệnh án</p>
+                  <h3 className="mt-1 text-lg font-black tracking-tight text-slate-950">Lịch sử khám AI</h3>
                 </div>
                 <button
                   onClick={loadPatientHistory}
                   disabled={loadingHistory}
                   className="rounded-full bg-sky-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-sky-700 hover:bg-sky-100 transition"
                 >
-                  {loadingHistory ? 'Äang táº£i...' : showHistory ? 'Cáº­p nháº­t' : 'Xem lá»‹ch sá»­'}
+                  {loadingHistory ? 'Đang tải...' : showHistory ? 'Cập nhật' : 'Xem lịch sử'}
                 </button>
               </div>
               
               {showHistory && (
                 <div className="max-h-[300px] overflow-y-auto bg-slate-50/60 p-4 space-y-4">
                   {medicalHistory.length === 0 ? (
-                     <p className="text-center text-sm text-slate-500 py-4">Bá»‡nh nhÃ¢n chÆ°a cÃ³ lá»‹ch sá»­ khÃ¡m.</p>
+                     <p className="text-center text-sm text-slate-500 py-4">Bệnh nhân chưa có lịch sử khám.</p>
                   ) : (
                     medicalHistory.map((hist: any) => (
                       <div key={hist.id} className="rounded-2xl border border-slate-200 bg-white p-3">
@@ -1142,9 +1141,9 @@ function Clinic() {
                         </div>
                         {hist.prescriptions?.map((p: any) => (
                           <div key={p.id} className="mb-2">
-                            <p className="text-[11px] font-bold text-sky-700">Cháº©n Ä‘oÃ¡n:</p>
+                            <p className="text-[11px] font-bold text-sky-700">Chẩn đoán:</p>
                             <p className="text-xs text-slate-700 mb-1">{p.diagnosis}</p>
-                            <p className="text-[11px] font-bold text-emerald-700">ÄÆ¡n thuá»‘c:</p>
+                            <p className="text-[11px] font-bold text-emerald-700">Đơn thuốc:</p>
                             <p className="text-xs text-slate-700">{p.medicines}</p>
                           </div>
                         ))}
@@ -1161,7 +1160,7 @@ function Clinic() {
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Chat</p>
-                <h3 className="mt-1 text-lg font-black tracking-tight text-slate-950">Trao Ä‘á»•i trá»±c tuyáº¿n</h3>
+                <h3 className="mt-1 text-lg font-black tracking-tight text-slate-950">Trao đổi trực tuyến</h3>
               </div>
               <div className="rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-sky-700">Real-time</div>
             </div>
@@ -1171,8 +1170,8 @@ function Clinic() {
                   <div className="grid h-14 w-14 place-items-center rounded-3xl bg-white text-sky-600 shadow-sm">
                     <ShieldCheck className="h-6 w-6" />
                   </div>
-                  <h4 className="mt-4 text-sm font-bold text-slate-950">ChÆ°a cÃ³ tin nháº¯n</h4>
-                  <p className="mt-2 text-xs leading-6 text-slate-500">Báº¯t Ä‘áº§u cÃ¢u há»i Ä‘áº§u tiÃªn Ä‘á»ƒ phiÃªn khÃ¡m trÃ´ng giá»‘ng má»™t workspace thá»±c táº¿ hÆ¡n.</p>
+                  <h4 className="mt-4 text-sm font-bold text-slate-950">Chưa có tin nhắn</h4>
+                  <p className="mt-2 text-xs leading-6 text-slate-500">Bắt đầu câu hỏi đầu tiên để phiên khám trông giống một workspace thực tế hơn.</p>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
@@ -1217,7 +1216,7 @@ function Clinic() {
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Nháº­p ná»™i dung gá»­i bÃ¡c sÄ©..."
+                  placeholder="Nhập nội dung gửi bác sĩ..."
                   className="w-full bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
                 />
                 <button
@@ -1233,28 +1232,28 @@ function Clinic() {
         </aside>
       </main>
 
-      {/* ðŸ“… MODAL Äáº¶T Lá»ŠCH THEO KHUNG GIá»œ */}
+      {/* 📅 MODAL ĐẶT LỊCH THEO KHUNG GIỜ */}
       {showScheduleModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 px-4 py-6 backdrop-blur-sm">
           <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-600">Äáº·t lá»‹ch trá»±c tuyáº¿n</p>
-                <h3 className="text-xl font-black text-slate-900">Chá»n khung giá» khÃ¡m bá»‡nh</h3>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-600">Đặt lịch trực tuyến</p>
+                <h3 className="text-xl font-black text-slate-900">Chọn khung giờ khám bệnh</h3>
               </div>
               <button
                 onClick={() => setShowScheduleModal(false)}
                 className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
               >
-                âœ•
+                ✕
               </button>
             </div>
 
             <form onSubmit={handleScheduleSubmit} className="mt-5 space-y-4">
-              {/* Dropdown Chá»n BÃ¡c SÄ© */}
+              {/* Dropdown Chọn Bác Sĩ */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-1.5">
-                  BÃ¡c sÄ© phá»¥ trÃ¡ch tÆ° váº¥n
+                  Bác sĩ phụ trách tư vấn
                 </label>
                 <select
                   value={selectedDoctorId}
@@ -1268,7 +1267,7 @@ function Clinic() {
                 >
                   {doctorsList.map((doc) => (
                     <option key={doc.id} value={doc.id}>
-                      {doc.name} â€” {doc.specialty}
+                      {doc.name} — {doc.specialty}
                     </option>
                   ))}
                 </select>
@@ -1276,7 +1275,7 @@ function Clinic() {
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-1.5">
-                  NgÃ y khÃ¡m
+                  Ngày khám
                 </label>
                 <input
                   type="date"
@@ -1291,15 +1290,15 @@ function Clinic() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                    Khung giá» tÆ° váº¥n
+                    Khung giờ tư vấn
                   </label>
-                  {loadingSlots && <span className="text-[10px] font-bold text-sky-600 animate-pulse">Äang táº£i...</span>}
+                  {loadingSlots && <span className="text-[10px] font-bold text-sky-600 animate-pulse">Đang tải...</span>}
                 </div>
                 
                 <div className="grid grid-cols-3 gap-2.5">
                   {!loadingSlots && availableSlots.length === 0 && (
                     <div className="col-span-full py-3 text-center text-xs font-semibold text-slate-500 bg-slate-50 rounded-xl border border-slate-100">
-                      BÃ¡c sÄ© khÃ´ng cÃ³ lá»‹ch ráº£nh vÃ o ngÃ y nÃ y.
+                      Bác sĩ không có lịch rảnh vào ngày này.
                     </div>
                   )}
                   {availableSlots.map((slot) => {
@@ -1336,14 +1335,14 @@ function Clinic() {
                   onClick={() => setShowScheduleModal(false)}
                   className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
-                  Há»§y
+                  Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={bookingLoading}
                   className="flex-1 rounded-full bg-sky-600 py-3 text-sm font-bold text-white shadow-lg transition hover:bg-sky-700 disabled:opacity-50"
                 >
-                  {bookingLoading ? 'Äang kiá»ƒm tra...' : 'XÃ¡c nháº­n Ä‘áº·t lá»‹ch'}
+                  {bookingLoading ? 'Đang kiểm tra...' : 'Xác nhận đặt lịch'}
                 </button>
               </div>
             </form>
@@ -1352,14 +1351,14 @@ function Clinic() {
       )}
 
 
-      {/* â•â•â• MODAL KÃŠ ÄÆ N THUá»C & CHáº¨N ÄOÃN (Chá»‰ dÃ nh cho BÃ¡c sÄ©) â•â•â• */}
+      {/* ═══ MODAL KÊ ĐƠN THUỐC & CHẨN ĐOÁN (Chỉ dành cho Bác sĩ) ═══ */}
       {showPrescriptionModal && authUser?.role === 'DOCTOR' && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
           <div className="w-full max-w-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)] rounded-[2rem] bg-white p-8 shadow-2xl">
             <div className="mb-6 flex items-center justify-between">
               <div>
-                <h3 className="text-2xl font-black tracking-tight text-slate-900">Káº¿t luáº­n khÃ¡m & KÃª Ä‘Æ¡n</h3>
-                <p className="text-sm font-medium text-slate-500">HoÃ n táº¥t quy trÃ¬nh khÃ¡m cho bá»‡nh nhÃ¢n</p>
+                <h3 className="text-2xl font-black tracking-tight text-slate-900">Kết luận khám & Kê đơn</h3>
+                <p className="text-sm font-medium text-slate-500">Hoàn tất quy trình khám cho bệnh nhân</p>
               </div>
             </div>
 
@@ -1372,13 +1371,13 @@ function Clinic() {
             <form onSubmit={handlePrescriptionSubmit} className="space-y-6">
               <div>
                 <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                  Cháº©n Ä‘oÃ¡n bá»‡nh
+                  Chẩn đoán bệnh
                 </label>
                 <textarea
                   required
                   value={diagnosis}
                   onChange={(e) => setDiagnosis(e.target.value)}
-                  placeholder="Ghi rÃµ cháº©n Ä‘oÃ¡n bá»‡nh tÃ¬nh cá»§a bá»‡nh nhÃ¢n..."
+                  placeholder="Ghi rõ chẩn đoán bệnh tình của bệnh nhân..."
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium focus:border-sky-500 focus:bg-white focus:outline-none"
                   rows={3}
                 />
@@ -1386,13 +1385,13 @@ function Clinic() {
 
               <div>
                 <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                  ÄÆ¡n thuá»‘c & Lá»i khuyÃªn
+                  Đơn thuốc & Lời khuyên
                 </label>
                 <textarea
                   required
                   value={medicines}
                   onChange={(e) => setMedicines(e.target.value)}
-                  placeholder="VD: 1. Panadol 500mg (2 viÃªn/ngÃ y)&#10;2. Oresol (1 gÃ³i/ngÃ y)&#10;Nghá»‰ ngÆ¡i nhiá»u, uá»‘ng Ä‘á»§ nÆ°á»›c..."
+                  placeholder="VD: 1. Panadol 500mg (2 viên/ngày)&#10;2. Oresol (1 gói/ngày)&#10;Nghỉ ngơi nhiều, uống đủ nước..."
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium focus:border-emerald-500 focus:bg-white focus:outline-none"
                   rows={4}
                 />
@@ -1404,7 +1403,7 @@ function Clinic() {
                   disabled={prescriptionLoading}
                   className="flex-1 rounded-full bg-slate-900 py-3.5 text-sm font-bold text-white shadow-lg transition hover:bg-slate-800 disabled:opacity-50"
                 >
-                  {prescriptionLoading ? 'Äang lÆ°u...' : 'LÆ°u & Gá»­i cho bá»‡nh nhÃ¢n'}
+                  {prescriptionLoading ? 'Đang lưu...' : 'Lưu & Gửi cho bệnh nhân'}
                 </button>
               </div>
             </form>
@@ -1416,4 +1415,3 @@ function Clinic() {
 }
 
 export default Clinic;
-
