@@ -4,9 +4,14 @@ on:
   push:
     branches:
       - main
+      - master
+      - fix/docker-prisma-dashboard
+      - feat/fr26-vitals-sources
   pull_request:
     branches:
       - main
+      - master
+      - fix/docker-prisma-dashboard
 
 jobs:
   frontend:
@@ -52,5 +57,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
       - name: Build
         run: npm run build
+
+      - name: Test
+        run: npm test -- --runInBand
