@@ -38,7 +38,7 @@ services:
         condition: service_healthy
     environment:
       PORT: 3000
-      FRONTEND_URL: http://localhost:5173
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       DATABASE_URL: mysql://telehealth:telehealth123@db:3306/telehealth_db
       NODE_ENV: ${NODE_ENV:-development}
       JWT_SECRET: ${JWT_SECRET:-SieuBaoMatTeleHealth2026}
@@ -71,8 +71,11 @@ services:
     depends_on:
       - backend-dev
     environment:
-      VITE_API_URL: http://localhost:3000
-      VITE_SOCKET_URL: http://localhost:3000
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      VITE_SOCKET_URL: ${VITE_SOCKET_URL:-http://localhost:3000}
+      VITE_TURN_URL: ${VITE_TURN_URL:-}
+      VITE_TURN_USERNAME: ${VITE_TURN_USERNAME:-}
+      VITE_TURN_CREDENTIAL: ${VITE_TURN_CREDENTIAL:-}
     ports:
       - "5173:5173"
     volumes:
@@ -93,7 +96,7 @@ services:
         condition: service_healthy
     environment:
       PORT: 3000
-      FRONTEND_URL: http://localhost:4173
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4173}
       DATABASE_URL: mysql://telehealth:telehealth123@db:3306/telehealth_db
       NODE_ENV: production
       JWT_SECRET: ${JWT_SECRET:-SieuBaoMatTeleHealth2026}
@@ -123,8 +126,11 @@ services:
     depends_on:
       - backend-prod
     environment:
-      VITE_API_URL: http://localhost:3000
-      VITE_SOCKET_URL: http://localhost:3000
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      VITE_SOCKET_URL: ${VITE_SOCKET_URL:-http://localhost:3000}
+      VITE_TURN_URL: ${VITE_TURN_URL:-}
+      VITE_TURN_USERNAME: ${VITE_TURN_USERNAME:-}
+      VITE_TURN_CREDENTIAL: ${VITE_TURN_CREDENTIAL:-}
     ports:
       - "4173:4173"
     command: sh -c "npm run build && npm run preview -- --host 0.0.0.0 --port 4173"
