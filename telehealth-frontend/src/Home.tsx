@@ -25,6 +25,7 @@ import {
   Banknote,
 } from 'lucide-react';
 import { getAuthToken, getAuthUser, type AuthUser } from './auth';
+import { useLanguage } from './i18n';
 
 interface Doctor {
   id: number;
@@ -66,7 +67,7 @@ interface BookingForm {
   paymentMethod: string;
 }
 
-const services = [
+const servicesVi = [
   {
     icon: Video,
     title: 'Khám bệnh online',
@@ -87,7 +88,7 @@ const services = [
   },
 ];
 
-const processSteps = [
+const processStepsVi = [
   {
     title: 'Đặt lịch nhanh',
     description: 'Chọn chuyên khoa, chọn bác sĩ và khung giờ phù hợp chỉ trong vài thao tác.',
@@ -102,7 +103,7 @@ const processSteps = [
   },
 ];
 
-const socialStories = [
+const socialStoriesVi = [
   {
     title: 'Phòng dịch học đường',
     description: 'Hỗ trợ các trường học xây dựng quy trình sàng lọc, tư vấn và ứng phó y tế an toàn.',
@@ -117,7 +118,7 @@ const socialStories = [
   },
 ];
 
-const partnerLogos = [
+const partnerLogosVi = [
   'Bệnh viện đối tác',
   'Phòng xét nghiệm',
   'Trường học',
@@ -125,6 +126,26 @@ const partnerLogos = [
   'Nhà thuốc',
   'Doanh nghiệp',
 ];
+
+const servicesEn = [
+  { icon: Video, title: 'Online consultation', description: 'Remote consultations with a clear booking, video call, and follow-up process.', price: 'From VND 120,000' },
+  { icon: Microscope, title: 'At-home testing', description: 'Flexible sample collection, secure results, and seamless synchronization in one system.', price: 'Flexible packages' },
+  { icon: HeartPulse, title: 'Medicine delivery', description: 'Prescriptions, medication reminders, and fast delivery for continuous patient care.', price: 'By prescription' },
+];
+
+const processStepsEn = [
+  { title: 'Book quickly', description: 'Choose a specialty, doctor, and suitable time slot in just a few steps.' },
+  { title: 'Consult online', description: 'Join a secure video call with medical records and clear consultation notes.' },
+  { title: 'Continuous follow-up', description: 'Receive instructions, follow-up reminders, and health indicators after each consultation.' },
+];
+
+const socialStoriesEn = [
+  { title: 'School health protection', description: 'Help schools build safe screening, consultation, and medical response workflows.' },
+  { title: 'Community health workshops', description: 'Organize health education programs that give families practical knowledge.' },
+  { title: 'Tele-triage and e-consult', description: 'Shorten access time and prioritize cases that require early medical support.' },
+];
+
+const partnerLogosEn = ['Partner hospitals', 'Laboratories', 'Schools', 'Health agencies', 'Pharmacies', 'Businesses'];
 
 const PAYMENT_METHODS = [
   { id: 'WALLET', label: 'Ví ảo OS Telehealth', icon: Wallet, color: 'text-sky-600 bg-sky-50 border-sky-200' },
@@ -148,6 +169,12 @@ function formatDoctorName(name?: string) {
 
 function Home() {
   const navigate = useNavigate();
+  const { language } = useLanguage();
+  const tx = (vi: string, en: string) => language === 'vi' ? vi : en;
+  const services = language === 'vi' ? servicesVi : servicesEn;
+  const processSteps = language === 'vi' ? processStepsVi : processStepsEn;
+  const socialStories = language === 'vi' ? socialStoriesVi : socialStoriesEn;
+  const partnerLogos = language === 'vi' ? partnerLogosVi : partnerLogosEn;
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -188,7 +215,7 @@ function Home() {
         body: JSON.stringify({ emergencyType: selectedEmergencyType }),
       });
       if (!response.ok) {
-        throw new Error('Lỗi khi tạo ca cấp cứu');
+        throw new Error(tx('Lỗi khi tạo ca cấp cứu', 'Could not create the emergency case'));
       }
       const data = await response.json();
       const apptId = data.data.appointmentId;
@@ -196,7 +223,7 @@ function Home() {
       navigate(`/clinic?appointmentId=${apptId}&isEmergency=true`);
     } catch (err) {
       console.error(err);
-      alert('Hệ thống gặp sự cố khi tạo ca cấp cứu. Hãy thử lại hoặc gọi số khẩn cấp quốc gia!');
+      alert(tx('Hệ thống gặp sự cố khi tạo ca cấp cứu. Hãy thử lại hoặc gọi số khẩn cấp quốc gia!', 'The emergency system encountered an error. Please try again or call your national emergency number.'));
     }
   }
 
@@ -208,7 +235,7 @@ function Home() {
         const normalizedDoctors = records.map((doctor: any) => ({
           id: doctor.id,
           name: doctor.fullName,
-          specialty: doctor.doctorProfile?.specialty ?? 'Đa khoa',
+          specialty: doctor.doctorProfile?.specialty ?? tx('Đa khoa', 'General medicine'),
           bio: doctor.doctorProfile?.bio ?? '',
           yearsExp: doctor.doctorProfile?.experienceYears ?? 0,
           rating: doctor.rating ?? 5.0,
@@ -323,15 +350,15 @@ function Home() {
     const errors: { slot?: string; symptoms?: string } = {};
 
     if (!selectedSlotIsAvailable) {
-      errors.slot = 'Vui lòng chọn một khung giờ còn trống.';
+      errors.slot = tx('Vui lòng chọn một khung giờ còn trống.', 'Please select an available time slot.');
     }
     if (!bookingModal.symptoms.trim()) {
-      errors.symptoms = 'Vui lòng mô tả triệu chứng trước khi tiếp tục.';
+      errors.symptoms = tx('Vui lòng mô tả triệu chứng trước khi tiếp tục.', 'Please describe your symptoms before continuing.');
     }
 
     setBookingFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
-      setBookingError('Vui lòng điền đầy đủ thông tin bắt buộc.');
+      setBookingError(tx('Vui lòng điền đầy đủ thông tin bắt buộc.', 'Please complete all required information.'));
       return;
     }
 
@@ -354,13 +381,13 @@ function Home() {
       setBookingStep(1);
       setBookingFieldErrors({
         ...(!bookingModal.startTime || !bookingModal.endTime
-          ? { slot: 'Vui lòng chọn một khung giờ còn trống.' }
+          ? { slot: tx('Vui lòng chọn một khung giờ còn trống.', 'Please select an available time slot.') }
           : {}),
         ...(!bookingModal.symptoms.trim()
-          ? { symptoms: 'Vui lòng mô tả triệu chứng trước khi tiếp tục.' }
+          ? { symptoms: tx('Vui lòng mô tả triệu chứng trước khi tiếp tục.', 'Please describe your symptoms before continuing.') }
           : {}),
       });
-      setBookingError('Vui lòng điền đầy đủ thông tin bắt buộc.');
+      setBookingError(tx('Vui lòng điền đầy đủ thông tin bắt buộc.', 'Please complete all required information.'));
       return;
     }
 
@@ -385,11 +412,11 @@ function Home() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message ?? 'Đặt lịch thất bại');
+      if (!res.ok) throw new Error(data.message ?? tx('Đặt lịch thất bại', 'Booking failed'));
 
       setBookingStep(3);
     } catch (err) {
-      setBookingError(err instanceof Error ? err.message : 'Đặt lịch thất bại');
+      setBookingError(err instanceof Error ? err.message : tx('Đặt lịch thất bại', 'Booking failed'));
     } finally {
       setBookingLoading(false);
     }
@@ -411,7 +438,7 @@ function Home() {
             <div className="bg-gradient-to-r from-sky-600 to-cyan-500 px-6 py-5 text-white">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-100">Đặt lịch khám</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-100">{tx('Đặt lịch khám', 'Book an appointment')}</p>
                   <h2 className="mt-1 text-xl font-black">{formatDoctorName(bookingModal.doctorName)}</h2>
                 </div>
                 <button
@@ -425,7 +452,7 @@ function Home() {
               {/* Progress steps */}
               {bookingStep < 3 && (
                 <div className="mt-4 flex items-center gap-2">
-                  {['Thông tin lịch', 'Thanh toán'].map((label, i) => (
+                  {[tx('Thông tin lịch', 'Appointment'), tx('Thanh toán', 'Payment')].map((label, i) => (
                     <div key={label} className="flex items-center gap-2">
                       <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-black transition ${bookingStep > i + 1 ? 'bg-white text-sky-700' : bookingStep === i + 1 ? 'bg-white text-sky-700' : 'bg-white/20 text-white/60'}`}>
                         {i + 1}
@@ -444,7 +471,7 @@ function Home() {
                 {/* Ngày */}
                 <div>
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-                    <CalendarDays className="mr-1.5 inline h-3.5 w-3.5" />Ngày khám
+                    <CalendarDays className="mr-1.5 inline h-3.5 w-3.5" />{tx('Ngày khám', 'Appointment date')}
                   </label>
                   <input
                     id="booking-date"
@@ -470,15 +497,15 @@ function Home() {
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-                      <Clock3 className="mr-1.5 inline h-3.5 w-3.5" />Khung giờ trống
+                      <Clock3 className="mr-1.5 inline h-3.5 w-3.5" />{tx('Khung giờ trống', 'Available times')}
                     </label>
-                    {loadingSlots && <span className="text-[10px] font-bold text-sky-600 animate-pulse">Đang tải...</span>}
+                    {loadingSlots && <span className="text-[10px] font-bold text-sky-600 animate-pulse">{tx('Đang tải...', 'Loading...')}</span>}
                   </div>
                   
                   <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                     {!loadingSlots && availableSlots.length === 0 && (
                       <div className="col-span-full py-4 text-center text-sm font-semibold text-slate-500 bg-slate-50 rounded-xl border border-slate-100">
-                        Không có lịch rảnh nào trong ngày này.
+                        {tx('Không có lịch rảnh nào trong ngày này.', 'No available times on this date.')}
                       </div>
                     )}
                     {availableSlots.map((slot) => (
@@ -497,7 +524,7 @@ function Home() {
                     ))}
                   </div>
                   {bookingModal.startTime && (
-                     <p className="mt-2 text-xs text-slate-400">Đã chọn ca: {bookingModal.startTime} — Kết thúc: {bookingModal.endTime}</p>
+                     <p className="mt-2 text-xs text-slate-400">{tx('Đã chọn ca', 'Selected')}: {bookingModal.startTime} — {tx('Kết thúc', 'Ends')}: {bookingModal.endTime}</p>
                   )}
                   {bookingFieldErrors.slot && (
                     <p className="mt-2 text-xs font-semibold text-rose-600">{bookingFieldErrors.slot}</p>
@@ -507,12 +534,12 @@ function Home() {
                 {/* Triệu chứng */}
                 <div>
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-                    Mô tả triệu chứng <span className="text-rose-500">*</span>
+                    {tx('Mô tả triệu chứng', 'Describe symptoms')} <span className="text-rose-500">*</span>
                   </label>
                   <textarea
                     id="booking-symptoms"
                     rows={3}
-                    placeholder="Ví dụ: đau đầu, sốt nhẹ, ho khan 3 ngày..."
+                    placeholder={tx('Ví dụ: đau đầu, sốt nhẹ, ho khan 3 ngày...', 'Example: headache, mild fever, dry cough for 3 days...')}
                     value={bookingModal.symptoms}
                     required
                     aria-invalid={Boolean(bookingFieldErrors.symptoms)}
@@ -539,7 +566,7 @@ function Home() {
                   disabled={loadingSlots}
                   className="w-full rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 py-3.5 text-sm font-black text-white shadow-lg shadow-sky-600/30 transition hover:from-sky-700 hover:to-cyan-600 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Tiếp tục chọn thanh toán →
+                  {tx('Tiếp tục chọn thanh toán →', 'Continue to payment →')}
                 </button>
               </div>
             )}
@@ -548,16 +575,16 @@ function Home() {
             {bookingStep === 2 && (
               <div className="space-y-5 p-6">
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Tóm tắt lịch hẹn</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">{tx('Tóm tắt lịch hẹn', 'Appointment summary')}</p>
                   <p className="mt-2 font-bold text-slate-900">{formatDoctorName(bookingModal.doctorName)}</p>
-                  <p className="text-sm text-slate-600">{new Date(bookingModal.appointmentDate).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })} · {bookingModal.startTime}–{bookingModal.endTime}</p>
+                  <p className="text-sm text-slate-600">{new Date(bookingModal.appointmentDate).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })} · {bookingModal.startTime}–{bookingModal.endTime}</p>
                   {bookingModal.symptoms && (
                     <p className="mt-1 text-xs italic text-slate-500">"{bookingModal.symptoms}"</p>
                   )}
                 </div>
 
                 <div>
-                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Phương thức thanh toán</p>
+                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">{tx('Phương thức thanh toán', 'Payment method')}</p>
                   <div className="space-y-2">
                     {PAYMENT_METHODS.map((pm) => {
                       const Icon = pm.icon;
@@ -570,9 +597,9 @@ function Home() {
                           className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-sm font-semibold transition ${bookingModal.paymentMethod === pm.id ? pm.color + ' ring-2 ring-offset-1 ring-current' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
                         >
                           <Icon className="h-5 w-5 shrink-0" />
-                          {pm.label}
+                          {pm.id === 'WALLET' ? tx('Ví ảo OS Telehealth', 'OS Telehealth Wallet') : pm.label}
                           {bookingModal.paymentMethod === pm.id && (
-                            <span className="ml-auto text-xs font-black">✓ Đã chọn</span>
+                            <span className="ml-auto text-xs font-black">✓ {tx('Đã chọn', 'Selected')}</span>
                           )}
                         </button>
                       );
@@ -582,17 +609,17 @@ function Home() {
 
                 {bookingModal.paymentMethod === 'WALLET' ? (
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                    💡 Phí tư vấn <strong>100.000đ</strong> sẽ được trừ vào Ví ảo OS Telehealth của bạn.
+                    💡 {tx('Phí tư vấn', 'The consultation fee of')} <strong>100.000đ</strong> {tx('sẽ được trừ vào Ví ảo OS Telehealth của bạn.', 'will be deducted from your OS Telehealth Wallet.')}
                     {walletBalance !== null && (
                       <div className="mt-2 text-xs">
-                        Số dư ví hiện tại: <strong>{walletBalance.toLocaleString('vi-VN')} VNĐ</strong>
-                        {walletBalance < 100000 && <span className="text-rose-600 block mt-1">⚠️ Số dư không đủ để thanh toán. Vui lòng chọn phương thức khác hoặc nạp thêm.</span>}
+                        {tx('Số dư ví hiện tại', 'Current wallet balance')}: <strong>{walletBalance.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')} VNĐ</strong>
+                        {walletBalance < 100000 && <span className="text-rose-600 block mt-1">⚠️ {tx('Số dư không đủ để thanh toán. Vui lòng chọn phương thức khác hoặc nạp thêm.', 'Insufficient balance. Please choose another method or add funds.')}</span>}
                       </div>
                     )}
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-700">
-                    💡 Phí tư vấn <strong>100.000đ</strong> sẽ được thanh toán qua <strong>{PAYMENT_METHODS.find(p => p.id === bookingModal.paymentMethod)?.label}</strong>.
+                    💡 {tx('Phí tư vấn', 'The consultation fee of')} <strong>100.000đ</strong> {tx('sẽ được thanh toán qua', 'will be paid via')} <strong>{PAYMENT_METHODS.find(p => p.id === bookingModal.paymentMethod)?.label}</strong>.
                   </div>
                 )}
 
@@ -605,7 +632,7 @@ function Home() {
                     onClick={() => setBookingStep(1)}
                     className="flex-1 rounded-full border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                   >
-                    ← Quay lại
+                    {tx('← Quay lại', '← Back')}
                   </button>
                   <button
                     id="booking-confirm-btn"
@@ -616,9 +643,9 @@ function Home() {
                     {bookingLoading ? (
                       <span className="flex items-center justify-center gap-2">
                         <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                        Đang đặt lịch...
+                        {tx('Đang đặt lịch...', 'Booking...')}
                       </span>
-                    ) : '✅ Xác nhận đặt lịch'}
+                    ) : tx('✅ Xác nhận đặt lịch', '✅ Confirm booking')}
                   </button>
                 </div>
               </div>
@@ -630,26 +657,26 @@ function Home() {
                 <div className="grid h-20 w-20 place-items-center rounded-full bg-emerald-100 text-5xl">
                   🎉
                 </div>
-                <h3 className="mt-4 text-2xl font-black text-slate-900">Đặt lịch thành công!</h3>
+                <h3 className="mt-4 text-2xl font-black text-slate-900">{tx('Đặt lịch thành công!', 'Booking successful!')}</h3>
                 <p className="mt-2 text-sm text-slate-600">
-                  Lịch hẹn với <strong>{formatDoctorName(bookingModal.doctorName)}</strong> ngày{' '}
-                  <strong>{new Date(bookingModal.appointmentDate).toLocaleDateString('vi-VN')}</strong>{' '}
-                  lúc <strong>{bookingModal.startTime}</strong> đã được ghi nhận.
+                  {tx('Lịch hẹn với', 'Your appointment with')} <strong>{formatDoctorName(bookingModal.doctorName)}</strong>{' '}
+                  {tx('ngày', 'on')} <strong>{new Date(bookingModal.appointmentDate).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US')}</strong>{' '}
+                  {tx('lúc', 'at')} <strong>{bookingModal.startTime}</strong> {tx('đã được ghi nhận.', 'has been recorded.')}
                 </p>
-                <p className="mt-2 text-sm text-slate-500">Bác sĩ sẽ xác nhận lịch hẹn trong thời gian sớm nhất.</p>
+                <p className="mt-2 text-sm text-slate-500">{tx('Bác sĩ sẽ xác nhận lịch hẹn trong thời gian sớm nhất.', 'The doctor will confirm your appointment shortly.')}</p>
 
                 <div className="mt-6 flex gap-3">
                   <button
                     onClick={closeBookingModal}
                     className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                   >
-                    Đóng
+                    {tx('Đóng', 'Close')}
                   </button>
                   <button
                     onClick={() => { closeBookingModal(); navigate('/dashboard'); }}
                     className="rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-sky-500/30 transition hover:from-sky-700"
                   >
-                    Xem lịch của tôi →
+                    {tx('Xem lịch của tôi →', 'View my appointments →')}
                   </button>
                 </div>
               </div>
@@ -668,18 +695,18 @@ function Home() {
             <div>
               <p className="text-sm font-extrabold tracking-tight text-slate-900">OS Telehealth</p>
               <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-slate-500">
-                Khám từ xa uy tín
+                {tx('Khám từ xa uy tín', 'Trusted telehealth care')}
               </p>
             </div>
           </button>
 
           <nav className="hidden items-center gap-7 lg:flex">
             {[
-              { label: 'Dịch vụ', href: '#services' },
-              { label: 'Quy trình', href: '#process' },
-              { label: 'Bác sĩ', href: '#doctors' },
-              { label: 'Tác động xã hội', href: '#social' },
-              { label: 'Đối tác', href: '#partners' },
+              { label: tx('Dịch vụ', 'Services'), href: '#services' },
+              { label: tx('Quy trình', 'Process'), href: '#process' },
+              { label: tx('Bác sĩ', 'Doctors'), href: '#doctors' },
+              { label: tx('Tác động xã hội', 'Social impact'), href: '#social' },
+              { label: tx('Đối tác', 'Partners'), href: '#partners' },
             ].map((item) => (
               <a
                 key={item.href}
@@ -710,7 +737,7 @@ function Home() {
               href="#doctors"
               className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
             >
-              Đặt lịch ngay
+              {tx('Đặt lịch ngay', 'Book now')}
               <ArrowRight className="h-4 w-4" />
             </a>
           </div>
@@ -724,19 +751,21 @@ function Home() {
             <div className="space-y-8">
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white/80 px-4 py-2 text-xs font-semibold text-sky-700 shadow-sm shadow-sky-100/60 backdrop-blur">
                 <Sparkles className="h-4 w-4" />
-                Kênh khám bệnh từ xa uy tín cho gia đình Việt
+                {tx('Kênh khám bệnh từ xa uy tín cho gia đình Việt', 'Trusted telehealth care for every family')}
               </div>
 
               <div className="space-y-5">
                 <h1 className="max-w-3xl text-4xl font-black leading-[1.02] tracking-tight text-slate-950 sm:text-5xl lg:text-7xl">
-                  Chăm sóc sức khỏe hiện đại,{' '}
+                  {tx('Chăm sóc sức khỏe hiện đại, ', 'Modern healthcare, ')}
                   <span className="bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 bg-clip-text text-transparent">
-                    đẹp và dễ dùng
+                    {tx('đẹp và dễ dùng', 'beautiful and easy to use')}
                   </span>
                 </h1>
                 <p className="max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
-                  OS Telehealth kết nối người bệnh với bác sĩ, xét nghiệm tại nhà, giao thuốc và theo dõi
-                  sức khỏe trong một trải nghiệm thống nhất.
+                  {tx(
+                    'OS Telehealth kết nối người bệnh với bác sĩ, xét nghiệm tại nhà, giao thuốc và theo dõi sức khỏe trong một trải nghiệm thống nhất.',
+                    'OS Telehealth connects patients with doctors, at-home testing, medicine delivery, and health monitoring in one seamless experience.',
+                  )}
                 </p>
               </div>
 
@@ -745,30 +774,30 @@ function Home() {
                   href="#doctors"
                   className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-slate-900/15 transition hover:-translate-y-0.5 hover:bg-slate-700"
                 >
-                  Đặt lịch khám ngay
+                  {tx('Đặt lịch khám ngay', 'Book an appointment')}
                   <ChevronRight className="h-4 w-4" />
                 </a>
                 <a
                   href="#services"
                   className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-200 hover:text-sky-700"
                 >
-                  Khám phá dịch vụ
+                  {tx('Khám phá dịch vụ', 'Explore services')}
                   <PlayCircle className="h-4 w-4" />
                 </a>
                 <button
                   onClick={() => navigate(getAuthToken() ? '/dashboard' : '/login')}
                   className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-6 py-3.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100"
                 >
-                  Xem dashboard
+                  {tx('Xem dashboard', 'View dashboard')}
                   <BadgeCheck className="h-4 w-4" />
                 </button>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-3">
                 {[
-                  { value: '24/7', label: 'Hỗ trợ đặt lịch' },
-                  { value: '15+', label: 'Năm kinh nghiệm' },
-                  { value: 'VND', label: 'Thanh toán linh hoạt' },
+                  { value: '24/7', label: tx('Hỗ trợ đặt lịch', 'Booking support') },
+                  { value: '15+', label: tx('Năm kinh nghiệm', 'Years of experience') },
+                  { value: 'VND', label: tx('Thanh toán linh hoạt', 'Flexible payment') },
                 ].map((stat) => (
                   <div
                     key={stat.label}
@@ -791,14 +820,14 @@ function Home() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">
-                      Trung tâm điều phối
+                      {tx('Trung tâm điều phối', 'Care coordination center')}
                     </p>
                     <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
-                      Trải nghiệm y tế đồng bộ
+                      {tx('Trải nghiệm y tế đồng bộ', 'A connected care experience')}
                     </h2>
                   </div>
                   <div className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
-                    Trực tuyến
+                    {tx('Trực tuyến', 'Online')}
                   </div>
                 </div>
 
@@ -807,9 +836,9 @@ function Home() {
                     <div className="flex items-center justify-between gap-4">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">
-                          Tư vấn trực tuyến
+                          {tx('Tư vấn trực tuyến', 'Online consultation')}
                         </p>
-                        <p className="mt-2 text-xl font-bold">Video call, chat, hồ sơ và tái khám</p>
+                        <p className="mt-2 text-xl font-bold">{tx('Video call, chat, hồ sơ và tái khám', 'Video calls, chat, records, and follow-ups')}</p>
                       </div>
                       <div className="grid h-14 w-14 place-items-center rounded-2xl bg-white/10 text-white">
                         <Video className="h-6 w-6" />
@@ -817,9 +846,9 @@ function Home() {
                     </div>
                     <div className="mt-5 grid grid-cols-3 gap-3 text-center">
                       {[
-                        ['Bảo mật', 'end-to-end'],
-                        ['Phản hồi', '< 15 phút'],
-                        ['Nhắc hẹn', 'tự động'],
+                        [tx('Bảo mật', 'Security'), 'end-to-end'],
+                        [tx('Phản hồi', 'Response'), tx('< 15 phút', '< 15 minutes')],
+                        [tx('Nhắc hẹn', 'Reminders'), tx('tự động', 'automatic')],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-2xl bg-white/8 px-3 py-4">
                           <p className="text-[11px] uppercase tracking-[0.2em] text-sky-200/70">{label}</p>
@@ -859,7 +888,7 @@ function Home() {
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Hỗ trợ tư vấn
+                          {tx('Hỗ trợ tư vấn', 'Consultation support')}
                         </p>
                         <p className="text-base font-bold text-slate-950">Hotline 0886 805 115</p>
                       </div>
@@ -875,10 +904,10 @@ function Home() {
         <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8">
           <div className="grid gap-4 md:grid-cols-4">
             {[
-              { icon: ShieldCheck, label: 'An toàn dữ liệu', value: 'Bảo mật nhiều lớp' },
-              { icon: Users, label: 'Cộng đồng', value: 'Phục vụ gia đình Việt' },
-              { icon: Clock3, label: 'Tốc độ', value: 'Quy trình tinh gọn' },
-              { icon: Hospital, label: 'Hệ sinh thái', value: 'Khám, xét nghiệm, thuốc' },
+              { icon: ShieldCheck, label: tx('An toàn dữ liệu', 'Data safety'), value: tx('Bảo mật nhiều lớp', 'Multi-layer security') },
+              { icon: Users, label: tx('Cộng đồng', 'Community'), value: tx('Phục vụ gia đình Việt', 'Care for every family') },
+              { icon: Clock3, label: tx('Tốc độ', 'Speed'), value: tx('Quy trình tinh gọn', 'Streamlined process') },
+              { icon: Hospital, label: tx('Hệ sinh thái', 'Ecosystem'), value: tx('Khám, xét nghiệm, thuốc', 'Care, testing, medicine') },
             ].map((item) => {
               const Icon = item.icon;
               return (
@@ -902,13 +931,15 @@ function Home() {
         {/* Services */}
         <section id="services" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="max-w-2xl space-y-3">
-            <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-700">Dịch vụ</p>
+            <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-700">{tx('Dịch vụ', 'Services')}</p>
             <h2 className="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-              Hệ dịch vụ y tế toàn diện, hiển thị rõ ràng và dễ thao tác
+              {tx('Hệ dịch vụ y tế toàn diện, hiển thị rõ ràng và dễ thao tác', 'Comprehensive healthcare services, clear and easy to use')}
             </h2>
             <p className="text-slate-600">
-              Bộ ba dịch vụ cốt lõi được đặt trong một layout thở được, nhiều khoảng trắng, card sâu và CTA
-              nổi bật hơn để cảm giác giống một nền tảng y tế cao cấp.
+              {tx(
+                'Ba dịch vụ cốt lõi được trình bày rõ ràng để bạn dễ tìm hiểu và thao tác.',
+                'Three core services are presented clearly so you can explore and take action with ease.',
+              )}
             </p>
           </div>
 
@@ -934,7 +965,7 @@ function Home() {
                     href="#doctors"
                     className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-sky-700 transition group-hover:text-sky-800"
                   >
-                    Xem bác sĩ phù hợp
+                    {tx('Xem bác sĩ phù hợp', 'Find a suitable doctor')}
                     <ArrowRight className="h-4 w-4" />
                   </a>
                 </article>
@@ -947,10 +978,10 @@ function Home() {
         <section id="process" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
             <div className="rounded-[2rem] border border-slate-100 bg-slate-950 p-8 text-white shadow-[0_28px_90px_rgba(15,23,42,0.2)]">
-              <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-300">Quy trình</p>
-              <h2 className="mt-4 text-3xl font-black tracking-tight">Ba bước là vào được phòng khám</h2>
+              <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-300">{tx('Quy trình', 'Process')}</p>
+              <h2 className="mt-4 text-3xl font-black tracking-tight">{tx('Ba bước là vào được phòng khám', 'Three steps to enter the clinic')}</h2>
               <p className="mt-4 max-w-xl text-sm leading-7 text-slate-300">
-                Trải nghiệm được thiết kế ngắn gọn hơn, ít rào cản hơn, phù hợp cả với người dùng lần đầu.
+                {tx('Trải nghiệm ngắn gọn, ít rào cản và phù hợp cả với người dùng lần đầu.', 'A simple experience with fewer barriers, even for first-time users.')}
               </p>
               <div className="mt-8 space-y-4">
                 {processSteps.map((step, index) => (
@@ -971,18 +1002,18 @@ function Home() {
               <div className="rounded-[2rem] border border-slate-100 bg-white p-7 shadow-[0_20px_60px_rgba(15,23,42,0.06)] md:col-span-2">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm font-bold uppercase tracking-[0.24em] text-sky-700">Ứng dụng</p>
-                    <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-950">Một điểm chạm cho mọi nhu cầu</h3>
+                    <p className="text-sm font-bold uppercase tracking-[0.24em] text-sky-700">{tx('Ứng dụng', 'Application')}</p>
+                    <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-950">{tx('Một điểm chạm cho mọi nhu cầu', 'One touchpoint for every need')}</h3>
                   </div>
                   <div className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600">
-                    Tối ưu cho mobile
+                    {tx('Tối ưu cho mobile', 'Mobile optimized')}
                   </div>
                 </div>
                 <div className="mt-6 grid gap-4 sm:grid-cols-3">
                   {[
-                    'Đặt lịch và nhắc lịch tự động',
-                    'Nhận đơn thuốc và kết quả xét nghiệm',
-                    'Theo dõi tái khám và lịch sử tư vấn',
+                    tx('Đặt lịch và nhắc lịch tự động', 'Automatic booking and reminders'),
+                    tx('Nhận đơn thuốc và kết quả xét nghiệm', 'Receive prescriptions and test results'),
+                    tx('Theo dõi tái khám và lịch sử tư vấn', 'Track follow-ups and consultation history'),
                   ].map((item) => (
                     <div key={item} className="rounded-3xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
                       <BadgeCheck className="mb-3 h-5 w-5 text-emerald-600" />
@@ -993,7 +1024,7 @@ function Home() {
               </div>
 
               <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
-                <p className="text-sm font-bold uppercase tracking-[0.24em] text-sky-700">Liên hệ</p>
+                <p className="text-sm font-bold uppercase tracking-[0.24em] text-sky-700">{tx('Liên hệ', 'Contact')}</p>
                 <div className="mt-4 space-y-3 text-sm text-slate-600">
                   <div className="flex items-center gap-3"><PhoneCall className="h-4 w-4 text-sky-700" />0886 805 115</div>
                   <div className="flex items-center gap-3"><Mail className="h-4 w-4 text-sky-700" />info@ostelehealth.com</div>
@@ -1002,10 +1033,10 @@ function Home() {
               </div>
 
               <div className="rounded-[2rem] border border-slate-100 bg-gradient-to-br from-sky-500 to-emerald-500 p-6 text-white shadow-[0_20px_60px_rgba(14,165,233,0.2)]">
-                <p className="text-sm font-bold uppercase tracking-[0.24em] text-white/80">Thanh toán</p>
+                <p className="text-sm font-bold uppercase tracking-[0.24em] text-white/80">{tx('Thanh toán', 'Payment')}</p>
                 <p className="mt-4 text-2xl font-black">MoMo · VNPay · ZaloPay</p>
                 <p className="mt-3 text-sm leading-6 text-white/85">
-                  Chọn phương thức thanh toán phù hợp ngay trong bước đặt lịch.
+                  {tx('Chọn phương thức thanh toán phù hợp ngay trong bước đặt lịch.', 'Choose your preferred payment method during booking.')}
                 </p>
               </div>
             </div>
@@ -1016,12 +1047,12 @@ function Home() {
         <section id="doctors" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl space-y-3">
-              <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-700">Bác sĩ nổi bật</p>
+              <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-700">{tx('Bác sĩ nổi bật', 'Featured doctors')}</p>
               <h2 className="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-                Đội ngũ chuyên gia — tìm kiếm & đặt lịch ngay
+                {tx('Đội ngũ chuyên gia — tìm kiếm & đặt lịch ngay', 'Our specialists — search and book now')}
               </h2>
               <p className="text-slate-600">
-                Tìm bác sĩ theo tên hoặc chuyên khoa, bấm "Đặt lịch" để chọn ngày giờ và thanh toán.
+                {tx('Tìm bác sĩ theo tên hoặc chuyên khoa, bấm "Đặt lịch" để chọn ngày giờ và thanh toán.', 'Find a doctor by name or specialty, then select a time and payment method.')}
               </p>
             </div>
           </div>
@@ -1033,7 +1064,7 @@ function Home() {
               <input
                 id="doctor-search"
                 type="text"
-                placeholder="Tìm theo tên bác sĩ..."
+                placeholder={tx('Tìm theo tên bác sĩ...', 'Search by doctor name...')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full rounded-full border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
@@ -1045,7 +1076,7 @@ function Home() {
                 onClick={() => setSelectedSpecialty('')}
                 className={`rounded-full border px-4 py-2 text-xs font-bold transition ${selectedSpecialty === '' ? 'border-sky-500 bg-sky-500 text-white shadow-md shadow-sky-500/30' : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-700'}`}
               >
-                Tất cả
+                {tx('Tất cả', 'All')}
               </button>
               {specialties.map((spec) => (
                 <button
@@ -1063,8 +1094,8 @@ function Home() {
           {!loading && (
             <p className="mt-3 text-sm text-slate-500">
               {filteredDoctors.length === 0
-                ? 'Không tìm thấy bác sĩ phù hợp.'
-                : `Tìm thấy ${filteredDoctors.length} bác sĩ${selectedSpecialty ? ` · ${selectedSpecialty}` : ''}${searchQuery ? ` · "${searchQuery}"` : ''}`}
+                ? tx('Không tìm thấy bác sĩ phù hợp.', 'No matching doctors found.')
+                : `${tx('Tìm thấy', 'Found')} ${filteredDoctors.length} ${tx('bác sĩ', 'doctor(s)')}${selectedSpecialty ? ` · ${selectedSpecialty}` : ''}${searchQuery ? ` · "${searchQuery}"` : ''}`}
             </p>
           )}
 
@@ -1072,11 +1103,11 @@ function Home() {
             {loading ? (
               <div className="flex items-center justify-center gap-3 rounded-[2rem] border border-slate-100 bg-white py-16 text-sm font-semibold text-sky-700 shadow-[0_20px_60px_rgba(15,23,42,0.05)]">
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600" />
-                Đang tải danh sách bác sĩ...
+                {tx('Đang tải danh sách bác sĩ...', 'Loading doctors...')}
               </div>
             ) : filteredDoctors.length === 0 ? (
               <div className="rounded-[2rem] border border-slate-100 bg-white py-16 text-center text-sm text-slate-500 shadow-[0_20px_60px_rgba(15,23,42,0.05)]">
-                {doctors.length === 0 ? 'Chưa có dữ liệu bác sĩ. Kiểm tra lại backend.' : 'Không tìm thấy bác sĩ phù hợp với tìm kiếm.'}
+                {doctors.length === 0 ? tx('Chưa có dữ liệu bác sĩ. Kiểm tra lại backend.', 'No doctor data yet. Please check the backend.') : tx('Không tìm thấy bác sĩ phù hợp với tìm kiếm.', 'No doctors match your search.')}
               </div>
             ) : (
               <div className="grid gap-6 lg:grid-cols-2">
@@ -1095,7 +1126,7 @@ function Home() {
                         </div>
 
                         <div className="text-center sm:text-left">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-sky-700">Chuyên gia</p>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-sky-700">{tx('Chuyên gia', 'Specialist')}</p>
                           <h3 className="mt-1 text-lg font-black tracking-tight text-slate-950">{doctor.name}</h3>
                           <p className="mt-1 text-sm font-medium text-slate-500">{doctor.specialty}</p>
                         </div>
@@ -1108,7 +1139,7 @@ function Home() {
                             className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-4 py-2.5 text-sm font-black text-white shadow-md shadow-sky-500/30 transition hover:from-sky-700 hover:to-cyan-600 active:scale-95"
                           >
                             <CalendarDays className="h-4 w-4" />
-                            Đặt lịch
+                            {tx('Đặt lịch', 'Book')}
                           </button>
                         </div>
                       </div>
@@ -1126,19 +1157,19 @@ function Home() {
 
                         <p className="text-sm leading-7 text-slate-600">
                           {doctor.bio ||
-                            'Mong muốn áp dụng y khoa từ xa để tối ưu tầm soát, tư vấn và điều trị kịp thời cho người bệnh.'}
+                            tx('Ứng dụng y khoa từ xa để tối ưu tầm soát, tư vấn và điều trị kịp thời.', 'Using telemedicine to improve screening, consultation, and timely treatment.')}
                         </p>
 
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div className="rounded-3xl bg-slate-50 p-4">
                             <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                              Kinh nghiệm
+                              {tx('Kinh nghiệm', 'Experience')}
                             </p>
-                            <p className="mt-2 text-lg font-black text-slate-950">{doctor.yearsExp || 8}+ năm</p>
+                            <p className="mt-2 text-lg font-black text-slate-950">{doctor.yearsExp || 8}+ {tx('năm', 'years')}</p>
                           </div>
                           <div className="rounded-3xl bg-slate-50 p-4">
                             <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                              Số bệnh nhân
+                              {tx('Số bệnh nhân', 'Patients')}
                             </p>
                             <p className="mt-2 text-lg font-black text-slate-950">
                               {doctor.patientCount || 0}+
@@ -1148,7 +1179,7 @@ function Home() {
 
                         <div className="flex items-center gap-2 text-sm font-semibold text-slate-500">
                           <Clock3 className="h-4 w-4 text-slate-400" />
-                          {doctor.isOnline ? 'Đang online và sẵn sàng tư vấn' : 'Đang ngoại tuyến, có thể đặt lịch trước'}
+                          {doctor.isOnline ? tx('Đang online và sẵn sàng tư vấn', 'Online and ready to consult') : tx('Đang ngoại tuyến, có thể đặt lịch trước', 'Offline — advance booking is available')}
                         </div>
                       </div>
                     </div>
@@ -1163,10 +1194,10 @@ function Home() {
         <section id="social" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
             <div className="rounded-[2rem] border border-slate-100 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
-              <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-700">Tác động xã hội</p>
-              <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">Dự án cộng đồng và y tế học đường</h2>
+              <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-700">{tx('Tác động xã hội', 'Social impact')}</p>
+              <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">{tx('Dự án cộng đồng và y tế học đường', 'Community and school health projects')}</h2>
               <p className="mt-4 text-sm leading-7 text-slate-600">
-                Phần này được nâng cấp để giống một trang thương hiệu có chiều sâu hơn.
+                {tx('Các sáng kiến giúp y tế từ xa tạo ra tác động thiết thực cho cộng đồng.', 'Initiatives that help telehealth create meaningful impact for the community.')}
               </p>
 
               <div className="mt-6 space-y-4">
@@ -1181,10 +1212,10 @@ function Home() {
 
             <div className="grid gap-6 md:grid-cols-2">
               {[
-                { title: 'Giám sát an toàn', description: 'Tối ưu cho trường học, doanh nghiệp và các chương trình sàng lọc quy mô lớn.', accent: 'from-sky-500 to-cyan-500' },
-                { title: 'Hội thảo chuyên môn', description: 'Thiết kế như một thư viện hoạt động với hình ảnh, nhãn và điểm nhấn rõ ràng.', accent: 'from-emerald-500 to-teal-500' },
-                { title: 'Tư vấn ca phức tạp', description: 'Hỗ trợ phân luồng sớm, giảm thời gian chờ và tăng khả năng tiếp cận chuyên gia.', accent: 'from-indigo-500 to-sky-500' },
-                { title: 'Đào tạo và chuyển giao', description: 'Mô hình dễ đọc, dễ hiểu, dễ triển khai cho đội ngũ y tế cơ sở.', accent: 'from-amber-500 to-orange-500' },
+                { title: tx('Giám sát an toàn', 'Safety monitoring'), description: tx('Tối ưu cho trường học, doanh nghiệp và các chương trình sàng lọc quy mô lớn.', 'Designed for schools, businesses, and large-scale screening programs.'), accent: 'from-sky-500 to-cyan-500' },
+                { title: tx('Hội thảo chuyên môn', 'Professional workshops'), description: tx('Thư viện hoạt động với hình ảnh, nhãn và điểm nhấn rõ ràng.', 'A clear activity library with images, labels, and highlights.'), accent: 'from-emerald-500 to-teal-500' },
+                { title: tx('Tư vấn ca phức tạp', 'Complex case consultation'), description: tx('Hỗ trợ phân luồng sớm, giảm thời gian chờ và tăng khả năng tiếp cận chuyên gia.', 'Enable early triage, reduce waiting time, and improve specialist access.'), accent: 'from-indigo-500 to-sky-500' },
+                { title: tx('Đào tạo và chuyển giao', 'Training and knowledge transfer'), description: tx('Mô hình dễ hiểu và dễ triển khai cho đội ngũ y tế cơ sở.', 'An easy-to-understand model for local healthcare teams.'), accent: 'from-amber-500 to-orange-500' },
               ].map((item) => (
                 <div key={item.title} className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
                   <div className={`h-2 w-20 rounded-full bg-gradient-to-r ${item.accent}`} />
@@ -1201,10 +1232,10 @@ function Home() {
           <div className="rounded-[2.25rem] border border-slate-100 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div className="max-w-2xl space-y-3">
-                <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-700">Khách hàng và đối tác</p>
-                <h2 className="text-3xl font-black tracking-tight text-slate-950">Mạng lưới hợp tác rộng và đáng tin cậy</h2>
+                <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-700">{tx('Khách hàng và đối tác', 'Customers and partners')}</p>
+                <h2 className="text-3xl font-black tracking-tight text-slate-950">{tx('Mạng lưới hợp tác rộng và đáng tin cậy', 'A broad and trusted partner network')}</h2>
                 <p className="text-slate-600">
-                  Một khối đối tác đẹp, nhiều khoảng trống hơn, dễ đọc hơn và gợi đúng tinh thần chuyên nghiệp.
+                  {tx('Kết nối cùng các đơn vị y tế, giáo dục và doanh nghiệp đáng tin cậy.', 'Connecting trusted healthcare, education, and business organizations.')}
                 </p>
               </div>
               <a
@@ -1213,7 +1244,7 @@ function Home() {
                 rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700"
               >
-                Xem website tham chiếu
+                {tx('Xem website tham chiếu', 'View reference website')}
                 <ArrowRight className="h-4 w-4" />
               </a>
             </div>
@@ -1236,12 +1267,12 @@ function Home() {
           <div className="rounded-[2.25rem] bg-gradient-to-r from-slate-950 via-slate-900 to-sky-950 px-8 py-10 text-white shadow-[0_30px_90px_rgba(15,23,42,0.25)] lg:px-12">
             <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
               <div>
-                <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-300">Bắt đầu ngay</p>
+                <p className="text-sm font-bold uppercase tracking-[0.3em] text-sky-300">{tx('Bắt đầu ngay', 'Get started')}</p>
                 <h2 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">
-                  Sẵn sàng cho trải nghiệm khám chữa bệnh đẹp hơn và trơn hơn
+                  {tx('Sẵn sàng cho trải nghiệm khám chữa bệnh tốt hơn', 'Ready for a better healthcare experience')}
                 </h2>
                 <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300">
-                  Đặt lịch với bác sĩ chuyên khoa, chọn giờ khám và thanh toán online ngay hôm nay.
+                  {tx('Đặt lịch với bác sĩ chuyên khoa, chọn giờ khám và thanh toán online ngay hôm nay.', 'Book a specialist, choose a time, and pay online today.')}
                 </p>
               </div>
 
@@ -1250,14 +1281,14 @@ function Home() {
                   href="#doctors"
                   className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-50"
                 >
-                  Tìm bác sĩ & đặt lịch
+                  {tx('Tìm bác sĩ & đặt lịch', 'Find a doctor & book')}
                   <ChevronRight className="h-4 w-4" />
                 </a>
                 <a
                   href="mailto:Info@ostelehealth.com"
                   className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
                 >
-                  Gửi email
+                  {tx('Gửi email', 'Send email')}
                   <Mail className="h-4 w-4" />
                 </a>
               </div>
@@ -1278,7 +1309,7 @@ function Home() {
               🚨
             </span>
           </span>
-          CẤP CỨU SOS
+          {tx('CẤP CỨU SOS', 'EMERGENCY SOS')}
         </button>
       )}
 
@@ -1290,21 +1321,27 @@ function Home() {
               <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white/20 text-4xl shadow-inner backdrop-blur-md">
                 🚨
               </span>
-              <h2 className="mt-4 text-2xl font-black uppercase tracking-widest">Báo động đỏ</h2>
-              <p className="mt-1 text-sm font-medium text-rose-100">Kích hoạt hệ thống y tế khẩn cấp</p>
+              <h2 className="mt-4 text-2xl font-black uppercase tracking-widest">{tx('Báo động đỏ', 'Emergency alert')}</h2>
+              <p className="mt-1 text-sm font-medium text-rose-100">{tx('Kích hoạt hệ thống y tế khẩn cấp', 'Activate emergency medical support')}</p>
             </div>
             <div className="p-6">
               <p className="mb-4 text-center text-sm font-semibold text-slate-600">
-                Lựa chọn tình trạng khẩn cấp:
+                {tx('Lựa chọn tình trạng khẩn cấp:', 'Select the emergency condition:')}
               </p>
               <div className="flex flex-col gap-3">
-                {[
+                {(language === 'vi' ? [
                   'Đau thắt ngực / Khó thở',
                   'Tai biến / Đột quỵ',
                   'Chấn thương nghiêm trọng',
                   'Ngộ độc',
                   'Khác (Cần hỗ trợ y tế gấp)',
-                ].map((type) => (
+                ] : [
+                  'Chest pain / Shortness of breath',
+                  'Stroke symptoms',
+                  'Serious injury',
+                  'Poisoning',
+                  'Other urgent medical emergency',
+                ]).map((type) => (
                   <button
                     key={type}
                     onClick={() => setSelectedEmergencyType(type)}
@@ -1324,13 +1361,13 @@ function Home() {
                 onClick={() => setShowEmergencyModal(false)}
                 className="flex-1 rounded-full border border-slate-200 bg-white py-3 font-bold text-slate-600 transition hover:bg-slate-100"
               >
-                Hủy bỏ
+                {tx('Hủy bỏ', 'Cancel')}
               </button>
               <button
                 onClick={handleEmergencySubmit}
                 className="flex-1 rounded-full bg-rose-600 py-3 font-black text-white shadow-lg shadow-rose-500/30 transition hover:bg-rose-700"
               >
-                GỌI CẤP CỨU NGAY
+                {tx('GỌI CẤP CỨU NGAY', 'CALL FOR HELP NOW')}
               </button>
             </div>
           </div>
@@ -1347,27 +1384,27 @@ function Home() {
               <div>
                 <p className="text-sm font-extrabold text-slate-950">OS Telehealth</p>
                 <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-slate-500">
-                  Nền tảng y tế số
+                  {tx('Nền tảng y tế số', 'Digital healthcare platform')}
                 </p>
               </div>
             </div>
             <p className="max-w-md text-sm leading-7 text-slate-600">
-              Kết nối người bệnh với bác sĩ chuyên khoa, hỗ trợ tư vấn trực tuyến và theo dõi sức khỏe toàn diện.
+              {tx('Kết nối người bệnh với bác sĩ chuyên khoa, hỗ trợ tư vấn trực tuyến và theo dõi sức khỏe toàn diện.', 'Connecting patients with specialists for online consultations and comprehensive health monitoring.')}
             </p>
           </div>
 
           <div className="space-y-3 text-sm text-slate-600">
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Liên hệ</p>
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">{tx('Liên hệ', 'Contact')}</p>
             <div className="flex items-center gap-3"><PhoneCall className="h-4 w-4 text-sky-700" /> 0886 805 115</div>
             <div className="flex items-center gap-3"><Mail className="h-4 w-4 text-sky-700" /> Info@ostelehealth.com</div>
             <div className="flex items-center gap-3"><MapPin className="h-4 w-4 text-sky-700" /> TP. Hồ Chí Minh</div>
           </div>
 
           <div className="space-y-3 text-sm text-slate-600">
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Dịch vụ</p>
-            <p>Tư vấn sức khỏe từ xa</p>
-            <p>Xét nghiệm tại nhà</p>
-            <p>Giao thuốc tận nơi</p>
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">{tx('Dịch vụ', 'Services')}</p>
+            <p>{tx('Tư vấn sức khỏe từ xa', 'Online health consultations')}</p>
+            <p>{tx('Xét nghiệm tại nhà', 'At-home testing')}</p>
+            <p>{tx('Giao thuốc tận nơi', 'Medicine delivery')}</p>
           </div>
         </div>
       </footer>
