@@ -4,12 +4,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getAuthToken, getAuthUser } from './auth';
 import PrivacyPolicyModal, { POLICY_VERSION } from './PrivacyPolicyModal';
 import { useLanguage } from './i18n';
+import VitalSignsPanel from './VitalSignsPanel';
 import {
   Activity,
   ArrowLeft,
   CalendarDays,
   Clock,
-  Heart,
   Image,
   MicOff,
   PhoneOff,
@@ -18,7 +18,6 @@ import {
   Stethoscope,
   Video,
   VideoOff,
-  Zap,
 } from 'lucide-react';
 
 interface Doctor {
@@ -76,7 +75,6 @@ function Clinic() {
   const [doctorsList, setDoctorsList] = useState<Doctor[]>([]);
   const [doctor, setDoctor] = useState<Doctor | null>(null);
   const [selectedDoctorId, setSelectedDoctorId] = useState<number>(Number(docId));
-  const [heartRate, setHeartRate] = useState(84);
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [callStatus, setCallStatus] = useState<CallStatus>('idle');
@@ -216,14 +214,6 @@ function Clinic() {
         setSelectedDoctorId(1);
       });
   }, [docId]);
-
-  // ─── 3. Nhịp tim giả lập ─────────────────────────────────────────────────
-  useEffect(() => {
-    const t = setInterval(() => {
-      setHeartRate((p) => { const n = p + (Math.random() > 0.5 ? 1 : -1); return n >= 80 && n <= 88 ? n : p; });
-    }, 2500);
-    return () => clearInterval(t);
-  }, []);
 
   // ─── 4. Scroll chat ───────────────────────────────────────────────────────
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -1057,35 +1047,8 @@ function Clinic() {
             </div>
           </div>
 
-          {/* Vital Signs */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Nhịp tim</p>
-                  <p className="mt-2 text-4xl font-black tracking-tight text-slate-950 tabular-nums">
-                    {heartRate}<span className="ml-2 text-sm font-semibold text-slate-400">bpm</span>
-                  </p>
-                </div>
-                <div className="grid h-16 w-16 place-items-center rounded-3xl bg-rose-50 text-rose-500">
-                  <Heart className="h-7 w-7 fill-current" />
-                </div>
-              </div>
-              <p className="mt-4 text-sm leading-7 text-slate-600">Chỉ số sinh tồn đang được mô phỏng theo thời gian thực để tạo cảm giác theo dõi y tế sống động hơn.</p>
-            </div>
-            <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">SpO2</p>
-                  <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">100<span className="ml-2 text-sm font-semibold text-slate-400">%</span></p>
-                </div>
-                <div className="grid h-16 w-16 place-items-center rounded-3xl bg-cyan-50 text-cyan-500">
-                  <Zap className="h-7 w-7" />
-                </div>
-              </div>
-              <p className="mt-4 text-sm leading-7 text-slate-600">Giao diện số liệu được làm thành những khối riêng để giảm rối mắt và tăng độ cao cấp cho màn hình.</p>
-            </div>
-          </div>
+          {/* FR26: Vital signs with explicit provenance */}
+          <VitalSignsPanel appointmentId={appointmentId} language={language} />
         </section>
 
         {/* Sidebar */}
