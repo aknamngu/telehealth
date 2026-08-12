@@ -89,6 +89,7 @@ model Appointment {
   symptoms        String?                 @db.Text
   status          String                  // 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'
   createdAt       DateTime                @default(now())
+  reminderEmailSentAt DateTime?
 
   // Mối quan hệ
   patient         User                    @relation("PatientAppointments", fields: [patientId], references: [id])
@@ -175,7 +176,7 @@ model MessageLog {
   sender        User        @relation(fields: [senderId], references: [id])
 }
 
-// 7. Bảng Phân tích chỉ số sinh tồn AI qua Camera (Real-time nhịp tim)
+// 7. Chỉ số sinh tồn kèm nguồn đo: nhập tay, Bluetooth chuẩn hoặc mô phỏng có nhãn
 model VitalSignsAI {
   id                   Int         @id @default(autoincrement())
   appointmentId        Int
