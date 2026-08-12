@@ -254,14 +254,18 @@ model Wallet {
 
 // 12. Bảng Hoá đơn giao dịch (Invoice)
 model Invoice {
-  id            Int         @id @default(autoincrement())
-  appointmentId Int         @unique
-  patientId     Int
-  amount        Float
-  status        String      // 'PAID', 'PENDING_REFUND', 'REFUNDED'
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id                Int         @id @default(autoincrement())
+  appointmentId     Int         @unique
+  patientId         Int
+  amount            Float
+  status            String      // 'PENDING', 'PAID', 'PENDING_REFUND', 'REFUNDED'
+  paymentMethod     String      @default("WALLET")
+  paymentCode       String?     @unique @db.VarChar(32)
+  bankTransactionId String?     @unique @db.VarChar(191)
+  paidAt            DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
-  appointment   Appointment @relation(fields: [appointmentId], references: [id])
-  patient       User        @relation(fields: [patientId], references: [id])
+  appointment       Appointment @relation(fields: [appointmentId], references: [id])
+  patient           User        @relation(fields: [patientId], references: [id])
 }

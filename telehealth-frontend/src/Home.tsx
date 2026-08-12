@@ -20,7 +20,6 @@ import {
   Video,
   X,
   CalendarDays,
-  CreditCard,
   Wallet,
   Banknote,
 } from 'lucide-react';
@@ -65,6 +64,17 @@ interface BookingForm {
   endTime: string;
   symptoms: string;
   paymentMethod: string;
+}
+
+interface PendingPayment {
+  invoiceId: number;
+  status: 'PENDING' | 'PAID';
+  qrImageUrl: string;
+  bankId: string;
+  accountNo: string;
+  accountName: string;
+  amount: number;
+  paymentCode: string;
 }
 
 const servicesVi = [
@@ -149,9 +159,7 @@ const partnerLogosEn = ['Partner hospitals', 'Laboratories', 'Schools', 'Health 
 
 const PAYMENT_METHODS = [
   { id: 'WALLET', label: 'Ví ảo OS Telehealth', icon: Wallet, color: 'text-sky-600 bg-sky-50 border-sky-200' },
-  { id: 'MOMO', label: 'MoMo', icon: Wallet, color: 'text-pink-600 bg-pink-50 border-pink-200' },
-  { id: 'VNPAY', label: 'VNPay', icon: CreditCard, color: 'text-blue-600 bg-blue-50 border-blue-200' },
-  { id: 'ZALOPAY', label: 'ZaloPay', icon: Banknote, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
+  { id: 'CASSO', label: 'Chuyển khoản QR (Casso)', icon: Banknote, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
 ];
 
 // TIME_SLOTS removed
@@ -216,6 +224,7 @@ function Home() {
   const [availableSlots, setAvailableSlots] = useState<{startTime: string, endTime: string}[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
 
   // SOS Emergency Modal
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
@@ -351,6 +360,7 @@ function Home() {
     setBookingError('');
     setBookingFieldErrors({});
     setAvailableSlots([]);
+    setPendingPayment(null);
     document.body.style.overflow = 'hidden';
   }
 
@@ -360,6 +370,7 @@ function Home() {
     setBookingError('');
     setBookingFieldErrors({});
     setAvailableSlots([]);
+    setPendingPayment(null);
     document.body.style.overflow = '';
   }
 
@@ -432,12 +443,20 @@ function Home() {
           startTime: bookingModal.startTime,
           endTime: bookingModal.endTime,
           symptoms: bookingModal.symptoms.trim(),
+          paymentMethod: bookingModal.paymentMethod,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? tx('Đặt lịch thất bại', 'Booking failed'));
 
+      if (bookingModal.paymentMethod === 'CASSO' && data.data?.payment) {
+        setPendingPayment({
+          invoiceId: data.data.invoice.id,
+          status: data.data.invoice.status,
+          ...data.data.payment,
+        });
+      }
       setBookingStep(3);
     } catch (err) {
       setBookingError(err instanceof Error ? err.message : tx('Đặt lịch thất bại', 'Booking failed'));
@@ -445,6 +464,37 @@ function Home() {
       setBookingLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!pendingPayment || pendingPayment.status === 'PAID') return;
+    const token = getAuthToken();
+    if (!token) return;
+
+    let stopped = false;
+    const checkPayment = async () => {
+      try {
+        const response = await fetch(
+          `${API_URL}/wallet/invoices/${pendingPayment.invoiceId}/payment-status`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!stopped && payload.data?.status === 'PAID') {
+          setPendingPayment((current) => current ? { ...current, status: 'PAID' } : current);
+          window.setTimeout(() => {
+            closeBookingModal();
+            navigate('/dashboard');
+          }, 1500);
+        }
+      } catch {
+        // Quick Tunnel có thể chập chờn; lần kiểm tra kế tiếp sẽ tự chạy lại.
+      }
+    };
+
+    void checkPayment();
+    const interval = window.setInterval(checkPayment, 3000);
+    return () => { stopped = true; window.clearInterval(interval); };
+  }, [pendingPayment?.invoiceId, pendingPayment?.status]);
 
   return (
     <div className="min-h-screen overflow-hidden text-slate-900">
@@ -675,35 +725,37 @@ function Home() {
               </div>
             )}
 
-            {/* ── STEP 3: Thành công ── */}
+            {/* ── STEP 3: Thanh toán / Thành công ── */}
             {bookingStep === 3 && (
-              <div className="flex flex-col items-center px-6 py-10 text-center">
-                <div className="grid h-20 w-20 place-items-center rounded-full bg-emerald-100 text-5xl">
-                  🎉
+              pendingPayment && pendingPayment.status !== 'PAID' ? (
+                <div className="space-y-5 p-6 text-center">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">{tx('Chờ chuyển khoản Casso', 'Waiting for Casso transfer')}</p>
+                    <h3 className="mt-2 text-2xl font-black text-slate-900">{tx('Quét QR để thanh toán 100.000đ', 'Scan the QR to pay VND 100,000')}</h3>
+                    <p className="mt-2 text-sm text-slate-500">{tx('Trang sẽ tự chuyển sang lịch của bạn ngay khi Casso xác nhận tiền vào.', 'This page will automatically open your appointments after Casso confirms the transfer.')}</p>
+                  </div>
+                  <img src={pendingPayment.qrImageUrl} alt="VietQR Casso" className="mx-auto w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm" />
+                  <div className="rounded-2xl bg-slate-50 p-4 text-left text-sm text-slate-700">
+                    <p><strong>{tx('Ngân hàng', 'Bank')}:</strong> {pendingPayment.bankId}</p>
+                    <p><strong>{tx('Số tài khoản', 'Account')}:</strong> {pendingPayment.accountNo}</p>
+                    <p><strong>{tx('Chủ tài khoản', 'Account name')}:</strong> {pendingPayment.accountName}</p>
+                    <p><strong>{tx('Số tiền', 'Amount')}:</strong> {pendingPayment.amount.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')} VNĐ</p>
+                    <p className="mt-2 rounded-xl bg-amber-50 p-3 text-amber-800"><strong>{tx('Nội dung bắt buộc', 'Required transfer content')}:</strong> {pendingPayment.paymentCode}</p>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 text-sm font-semibold text-sky-700"><span className="h-4 w-4 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600" />{tx('Đang chờ Casso xác nhận...', 'Waiting for Casso confirmation...')}</div>
                 </div>
-                <h3 className="mt-4 text-2xl font-black text-slate-900">{tx('Đặt lịch thành công!', 'Booking successful!')}</h3>
-                <p className="mt-2 text-sm text-slate-600">
-                  {tx('Lịch hẹn với', 'Your appointment with')} <strong>{formatDoctorName(bookingModal.doctorName)}</strong>{' '}
-                  {tx('ngày', 'on')} <strong>{new Date(bookingModal.appointmentDate).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US')}</strong>{' '}
-                  {tx('lúc', 'at')} <strong>{bookingModal.startTime}</strong> {tx('đã được ghi nhận.', 'has been recorded.')}
-                </p>
-                <p className="mt-2 text-sm text-slate-500">{tx('Bác sĩ sẽ xác nhận lịch hẹn trong thời gian sớm nhất.', 'The doctor will confirm your appointment shortly.')}</p>
-
-                <div className="mt-6 flex gap-3">
-                  <button
-                    onClick={closeBookingModal}
-                    className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    {tx('Đóng', 'Close')}
-                  </button>
-                  <button
-                    onClick={() => { closeBookingModal(); navigate('/dashboard'); }}
-                    className="rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-sky-500/30 transition hover:from-sky-700"
-                  >
-                    {tx('Xem lịch của tôi →', 'View my appointments →')}
-                  </button>
+              ) : (
+                <div className="flex flex-col items-center px-6 py-10 text-center">
+                  <div className="grid h-20 w-20 place-items-center rounded-full bg-emerald-100 text-5xl">🎉</div>
+                  <h3 className="mt-4 text-2xl font-black text-slate-900">{tx('Thanh toán & đặt lịch thành công!', 'Payment & booking successful!')}</h3>
+                  <p className="mt-2 text-sm text-slate-600">{tx('Lịch hẹn với', 'Your appointment with')} <strong>{formatDoctorName(bookingModal.doctorName)}</strong> {tx('đã được ghi nhận.', 'has been recorded.')}</p>
+                  {pendingPayment?.status === 'PAID' && <p className="mt-2 text-sm font-semibold text-emerald-700">{tx('Casso đã xác nhận tiền vào. Đang chuyển đến lịch của bạn...', 'Casso confirmed the payment. Opening your appointments...')}</p>}
+                  <div className="mt-6 flex gap-3">
+                    <button onClick={closeBookingModal} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700">{tx('Đóng', 'Close')}</button>
+                    <button onClick={() => { closeBookingModal(); navigate('/dashboard'); }} className="rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-2.5 text-sm font-black text-white">{tx('Xem lịch của tôi →', 'View my appointments →')}</button>
+                  </div>
                 </div>
-              </div>
+              )
             )}
           </div>
         </div>
@@ -1058,7 +1110,7 @@ function Home() {
 
               <div className="rounded-[2rem] border border-slate-100 bg-gradient-to-br from-sky-500 to-emerald-500 p-6 text-white shadow-[0_20px_60px_rgba(14,165,233,0.2)]">
                 <p className="text-sm font-bold uppercase tracking-[0.24em] text-white/80">{tx('Thanh toán', 'Payment')}</p>
-                <p className="mt-4 text-2xl font-black">MoMo · VNPay · ZaloPay</p>
+                <p className="mt-4 text-2xl font-black">Ví ảo · Chuyển khoản QR Casso</p>
                 <p className="mt-3 text-sm leading-6 text-white/85">
                   {tx('Chọn phương thức thanh toán phù hợp ngay trong bước đặt lịch.', 'Choose your preferred payment method during booking.')}
                 </p>

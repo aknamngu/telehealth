@@ -1,4 +1,4 @@
-import {
+﻿import {
   Injectable,
   BadRequestException,
   ForbiddenException,
@@ -13,6 +13,7 @@ import { MessagesGateway } from '../messages/messages.gateway';
 import { isDefaultAppointmentSlot } from '../scheduling/default-appointment-slots';
 import { ConfigService } from '@nestjs/config';
 import { createPrescriptionVerification } from '../prescriptions/prescription-verification';
+import { randomBytes } from 'node:crypto';
 import {
   AppointmentEmailDetails,
   MailService,
@@ -23,7 +24,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   private reminderTimer?: NodeJS.Timeout;
   private reminderJobRunning = false;
 
-  // Tiêm các dịch vụ DB, socket, cấu hình và email.
+  // TiÃªm cÃ¡c dá»‹ch vá»¥ DB, socket, cáº¥u hÃ¬nh vÃ  email.
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: MessagesGateway,
@@ -57,56 +58,58 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     const { patientId, doctorId, appointmentDate, startTime, endTime } =
       createAppointmentDto;
     const symptoms = createAppointmentDto.symptoms?.trim();
+    const paymentMethod =
+      createAppointmentDto.paymentMethod === 'CASSO' ? 'CASSO' : 'WALLET';
 
     if (!appointmentDate || !startTime || !endTime) {
       throw new BadRequestException(
-        'Vui lòng chọn đầy đủ ngày khám và khung giờ còn trống.',
+        'Vui lÃ²ng chá»n Ä‘áº§y Ä‘á»§ ngÃ y khÃ¡m vÃ  khung giá» cÃ²n trá»‘ng.',
       );
     }
     if (!symptoms) {
       throw new BadRequestException(
-        'Vui lòng mô tả triệu chứng trước khi đặt lịch.',
+        'Vui lÃ²ng mÃ´ táº£ triá»‡u chá»©ng trÆ°á»›c khi Ä‘áº·t lá»‹ch.',
       );
     }
 
     const resolvedPatientId = user.role === 'PATIENT' ? user.sub : patientId;
     const resolvedDoctorId = user.role === 'DOCTOR' ? user.sub : doctorId;
 
-    // 1. Kiểm tra xem Bệnh nhân (Patient) có tồn tại trong hệ thống không
+    // 1. Kiá»ƒm tra xem Bá»‡nh nhÃ¢n (Patient) cÃ³ tá»“n táº¡i trong há»‡ thá»‘ng khÃ´ng
     const patient = await this.prisma.user.findUnique({
       where: { id: resolvedPatientId },
     });
     if (!patient || patient.role !== 'PATIENT') {
       throw new BadRequestException(
-        'Bệnh nhân không tồn tại trên hệ thống rồi bạn ơi!',
+        'Bá»‡nh nhÃ¢n khÃ´ng tá»“n táº¡i trÃªn há»‡ thá»‘ng rá»“i báº¡n Æ¡i!',
       );
     }
 
-    // 2. Kiểm tra xem Bác sĩ (Doctor) có tồn tại và đúng role không
+    // 2. Kiá»ƒm tra xem BÃ¡c sÄ© (Doctor) cÃ³ tá»“n táº¡i vÃ  Ä‘Ãºng role khÃ´ng
     const doctor = await this.prisma.user.findUnique({
       where: { id: resolvedDoctorId },
     });
     if (!doctor || doctor.role !== 'DOCTOR') {
-      throw new BadRequestException('Bác sĩ không tồn tại hoặc không hợp lệ!');
+      throw new BadRequestException('BÃ¡c sÄ© khÃ´ng tá»“n táº¡i hoáº·c khÃ´ng há»£p lá»‡!');
     }
 
     if (user.role === 'PATIENT' && user.sub !== resolvedPatientId) {
-      throw new ForbiddenException('Bạn chỉ có thể tạo lịch cho chính mình!');
+      throw new ForbiddenException('Báº¡n chá»‰ cÃ³ thá»ƒ táº¡o lá»‹ch cho chÃ­nh mÃ¬nh!');
     }
 
     if (user.role === 'DOCTOR' && user.sub !== resolvedDoctorId) {
       throw new ForbiddenException(
-        'Bác sĩ chỉ có thể tạo lịch cho chính mình!',
+        'BÃ¡c sÄ© chá»‰ cÃ³ thá»ƒ táº¡o lá»‹ch cho chÃ­nh mÃ¬nh!',
       );
     }
 
     if (!isDefaultAppointmentSlot(startTime, endTime)) {
       throw new BadRequestException(
-        'Khung giờ không thuộc lịch khám mặc định 09:00–18:00.',
+        'Khung giá» khÃ´ng thuá»™c lá»‹ch khÃ¡m máº·c Ä‘á»‹nh 09:00â€“18:00.',
       );
     }
 
-    // 2.5 Kiểm tra xem Bác sĩ đã có lịch trùng ngày và khung giờ này chưa
+    // 2.5 Kiá»ƒm tra xem BÃ¡c sÄ© Ä‘Ã£ cÃ³ lá»‹ch trÃ¹ng ngÃ y vÃ  khung giá» nÃ y chÆ°a
     const targetDate = new Date(appointmentDate);
     const dateStart = new Date(
       targetDate.getFullYear(),
@@ -138,11 +141,11 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
 
     if (existingConflict) {
       throw new BadRequestException(
-        `Bác sĩ đã có lịch khám vào khung giờ ${startTime} - ${endTime} ngày ${targetDate.toLocaleDateString('vi-VN')} rồi! Vui lòng chọn khung giờ khác.`,
+        `BÃ¡c sÄ© Ä‘Ã£ cÃ³ lá»‹ch khÃ¡m vÃ o khung giá» ${startTime} - ${endTime} ngÃ y ${targetDate.toLocaleDateString('vi-VN')} rá»“i! Vui lÃ²ng chá»n khung giá» khÃ¡c.`,
       );
     }
 
-    // 2.6 Kiểm tra xem Bệnh nhân đã có lịch trùng ngày và khung giờ này với bác sĩ khác chưa
+    // 2.6 Kiá»ƒm tra xem Bá»‡nh nhÃ¢n Ä‘Ã£ cÃ³ lá»‹ch trÃ¹ng ngÃ y vÃ  khung giá» nÃ y vá»›i bÃ¡c sÄ© khÃ¡c chÆ°a
     const existingPatientConflict = await this.prisma.appointment.findFirst({
       where: {
         patientId: resolvedPatientId,
@@ -159,23 +162,32 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
 
     if (existingPatientConflict) {
       throw new BadRequestException(
-        `Bạn đã có lịch hẹn khám vào khung giờ ${startTime} - ${endTime} ngày ${targetDate.toLocaleDateString('vi-VN')} rồi! Mỗi khung giờ chỉ được đặt 1 bác sĩ.`,
+        `Báº¡n Ä‘Ã£ cÃ³ lá»‹ch háº¹n khÃ¡m vÃ o khung giá» ${startTime} - ${endTime} ngÃ y ${targetDate.toLocaleDateString('vi-VN')} rá»“i! Má»—i khung giá» chá»‰ Ä‘Æ°á»£c Ä‘áº·t 1 bÃ¡c sÄ©.`,
       );
     }
 
-    // 2.7 Kiểm tra số dư ví bệnh nhân (VD phí khám là 100,000)
+    // 2.7 Kiá»ƒm tra nguá»“n thanh toÃ¡n tÆ°Æ¡ng á»©ng.
     const FEE = 100000;
-    const wallet = await this.prisma.wallet.findUnique({
-      where: { userId: resolvedPatientId },
-    });
-    if (!wallet || wallet.balance < FEE) {
+    if (paymentMethod === 'WALLET') {
+      const wallet = await this.prisma.wallet.findUnique({
+        where: { userId: resolvedPatientId },
+      });
+      if (!wallet || wallet.balance < FEE) {
+        throw new BadRequestException(
+          'Sá»‘ dÆ° vÃ­ khÃ´ng Ä‘á»§ Ä‘á»ƒ Ä‘áº·t lá»‹ch háº¹n! (100.000 VNÄ)',
+        );
+      }
+    } else if (
+      !this.config.get<string>('PAYMENT_BANK_ID')?.trim() ||
+      !this.config.get<string>('PAYMENT_ACCOUNT_NO')?.trim()
+    ) {
       throw new BadRequestException(
-        'Số dư ví không đủ để đặt lịch hẹn! (100.000 VNĐ)',
+        'ChÆ°a cáº¥u hÃ¬nh tÃ i khoáº£n ngÃ¢n hÃ ng Ä‘á»ƒ táº¡o mÃ£ QR thanh toÃ¡n.',
       );
     }
 
-    // 3. Tiến hành lưu lịch hẹn mới và thanh toán (trừ ví, tạo hoá đơn)
-    const appointment = await this.prisma.$transaction(async (prisma) => {
+    // 3. LÆ°u lá»‹ch háº¹n vÃ  táº¡o hoÃ¡ Ä‘Æ¡n. Casso giá»¯ PENDING Ä‘áº¿n khi webhook tá»›i.
+    const result = await this.prisma.$transaction(async (prisma) => {
       const selectedSchedule = await prisma.doctorSchedule.upsert({
         where: {
           doctorId_date_startTime: {
@@ -199,7 +211,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       });
       if (reservedSlot.count !== 1) {
         throw new BadRequestException(
-          'Khung giờ vừa được người khác đặt. Vui lòng chọn khung giờ khác.',
+          'Khung giá» vá»«a Ä‘Æ°á»£c ngÆ°á»i khÃ¡c Ä‘áº·t. Vui lÃ²ng chá»n khung giá» khÃ¡c.',
         );
       }
 
@@ -207,84 +219,116 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         data: {
           patientId: resolvedPatientId,
           doctorId: resolvedDoctorId,
-          appointmentDate: new Date(appointmentDate), // Ép kiểu chuỗi ngày thành Date Object
+          appointmentDate: new Date(appointmentDate),
           startTime,
           endTime,
           symptoms,
-          status: 'PENDING', // Mặc định khi vừa đặt là Chờ duyệt
+          status: 'PENDING',
         },
         include: { patient: { select: { fullName: true } } },
       });
 
-      await prisma.wallet.update({
-        where: { userId: resolvedPatientId },
-        data: { balance: { decrement: FEE } },
-      });
+      if (paymentMethod === 'WALLET') {
+        await prisma.wallet.update({
+          where: { userId: resolvedPatientId },
+          data: { balance: { decrement: FEE } },
+        });
+      }
 
-      await prisma.invoice.create({
+      const paymentCode =
+        paymentMethod === 'CASSO'
+          ? `TH${appt.id}${randomBytes(2).toString('hex').toUpperCase()}`
+          : null;
+      const invoice = await prisma.invoice.create({
         data: {
           appointmentId: appt.id,
           patientId: resolvedPatientId,
           amount: FEE,
-          status: 'PAID',
+          status: paymentMethod === 'CASSO' ? 'PENDING' : 'PAID',
+          paymentMethod,
+          paymentCode,
+          paidAt: paymentMethod === 'WALLET' ? new Date() : null,
         },
       });
 
-      return appt;
+      return { appointment: appt, invoice };
     });
 
-    // 4. Emit real-time socket notification tới phòng bác sĩ
+    // 4. Emit real-time socket notification tá»›i phÃ²ng bÃ¡c sÄ©
     try {
       this.gateway.server
         .to(`doctor_${resolvedDoctorId}`)
         .emit('appointment:new', {
-          appointmentId: appointment.id,
-          patientName: appointment.patient?.fullName ?? 'Bệnh nhân',
+          appointmentId: result.appointment.id,
+          patientName: result.appointment.patient?.fullName ?? 'Bá»‡nh nhÃ¢n',
           date: appointmentDate,
           startTime,
         });
     } catch {
-      /* Gateway chưa ready thì bỏ qua */
+      /* Gateway chÆ°a ready thÃ¬ bá» qua */
     }
 
     await this.notifyAppointmentParticipants(
       {
-        id: appointment.id,
+        id: result.appointment.id,
         appointmentDate: new Date(appointmentDate),
         startTime,
         endTime,
-        status: appointment.status,
+        status: result.appointment.status,
         patient: { email: patient.email, fullName: patient.fullName },
         doctor: { email: doctor.email, fullName: doctor.fullName },
       },
       'BOOKED',
     );
 
+    const bankId = this.config.get<string>('PAYMENT_BANK_ID')?.trim() ?? '';
+    const accountNo = this.config.get<string>('PAYMENT_ACCOUNT_NO')?.trim() ?? '';
+    const accountName = this.config.get<string>('PAYMENT_ACCOUNT_NAME')?.trim() ?? '';
+    const qrImageUrl = result.invoice.paymentCode
+      ? `https://img.vietqr.io/image/${encodeURIComponent(bankId)}-${encodeURIComponent(accountNo)}-compact2.png?amount=${FEE}&addInfo=${encodeURIComponent(result.invoice.paymentCode)}&accountName=${encodeURIComponent(accountName)}`
+      : null;
+
     return {
       message:
-        'Đặt lịch hẹn khám bệnh từ xa thành công rực rỡ! Chờ bác sĩ xác nhận nha.',
-      data: appointment,
+        paymentMethod === 'CASSO'
+          ? 'ÄÃ£ giá»¯ lá»‹ch. Vui lÃ²ng quÃ©t QR Ä‘á»ƒ hoÃ n táº¥t thanh toÃ¡n.'
+          : 'Äáº·t lá»‹ch háº¹n khÃ¡m bá»‡nh tá»« xa thÃ nh cÃ´ng! Chá» bÃ¡c sÄ© xÃ¡c nháº­n.',
+      data: {
+        appointment: result.appointment,
+        invoice: result.invoice,
+        payment:
+          paymentMethod === 'CASSO'
+            ? {
+                qrImageUrl,
+                bankId,
+                accountNo,
+                accountName,
+                amount: FEE,
+                paymentCode: result.invoice.paymentCode,
+              }
+            : null,
+      },
     };
   }
 
-  // Tạo nhanh hồ sơ cấp cứu SOS (Lấy Bác sĩ đầu tiên làm dummy)
+  // Táº¡o nhanh há»“ sÆ¡ cáº¥p cá»©u SOS (Láº¥y BÃ¡c sÄ© Ä‘áº§u tiÃªn lÃ m dummy)
   async createEmergency(
     emergencyType: string,
     user: { sub: number; role: string },
   ) {
     if (user.role !== 'PATIENT') {
       throw new ForbiddenException(
-        'Chỉ bệnh nhân mới được dùng tính năng cấp cứu!',
+        'Chá»‰ bá»‡nh nhÃ¢n má»›i Ä‘Æ°á»£c dÃ¹ng tÃ­nh nÄƒng cáº¥p cá»©u!',
       );
     }
 
-    // Tìm một bác sĩ bất kỳ (dummy) để gán vào record (vì bảng yêu cầu có doctorId)
+    // TÃ¬m má»™t bÃ¡c sÄ© báº¥t ká»³ (dummy) Ä‘á»ƒ gÃ¡n vÃ o record (vÃ¬ báº£ng yÃªu cáº§u cÃ³ doctorId)
     const doctor = await this.prisma.user.findFirst({
       where: { role: 'DOCTOR' },
     });
     if (!doctor) {
       throw new BadRequestException(
-        'Hệ thống chưa có bác sĩ nào, không thể tạo ca cấp cứu!',
+        'Há»‡ thá»‘ng chÆ°a cÃ³ bÃ¡c sÄ© nÃ o, khÃ´ng thá»ƒ táº¡o ca cáº¥p cá»©u!',
       );
     }
 
@@ -302,7 +346,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     });
 
     return {
-      message: 'Tạo ca cấp cứu thành công!',
+      message: 'Táº¡o ca cáº¥p cá»©u thÃ nh cÃ´ng!',
       data: {
         appointmentId: appointment.id,
         doctorId: doctor.id,
@@ -311,7 +355,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async findAll(user: { sub: number; role: string }) {
-    // Bốc toàn bộ danh sách lịch hẹn lên, nối bảng lấy kèm tên bệnh nhân và bác sĩ cho trực quan
+    // Bá»‘c toÃ n bá»™ danh sÃ¡ch lá»‹ch háº¹n lÃªn, ná»‘i báº£ng láº¥y kÃ¨m tÃªn bá»‡nh nhÃ¢n vÃ  bÃ¡c sÄ© cho trá»±c quan
     const where =
       user.role === 'ADMIN'
         ? undefined
@@ -335,18 +379,18 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     });
 
     return {
-      message: 'Lấy danh sách toàn bộ lịch hẹn thành công!',
+      message: 'Láº¥y danh sÃ¡ch toÃ n bá»™ lá»‹ch háº¹n thÃ nh cÃ´ng!',
       data: appointments,
     };
   }
 
-  // Logic cập nhật trạng thái lịch hẹn (Duyệt/Hủy lịch)
+  // Logic cáº­p nháº­t tráº¡ng thÃ¡i lá»‹ch háº¹n (Duyá»‡t/Há»§y lá»‹ch)
   async updateStatus(
     id: number,
     status: string,
     user: { sub: number; role: string },
   ) {
-    // 1. Kiểm tra xem lịch hẹn này có tồn tại trong DB không
+    // 1. Kiá»ƒm tra xem lá»‹ch háº¹n nÃ y cÃ³ tá»“n táº¡i trong DB khÃ´ng
     const appointment = await this.prisma.appointment.findUnique({
       where: { id },
       include: {
@@ -356,10 +400,10 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!appointment) {
-      throw new NotFoundException('Không tìm thấy lịch hẹn này bạn ơi!');
+      throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y lá»‹ch háº¹n nÃ y báº¡n Æ¡i!');
     }
 
-    // 2. Kiểm tra tính hợp lệ của trạng thái gửi lên
+    // 2. Kiá»ƒm tra tÃ­nh há»£p lá»‡ cá»§a tráº¡ng thÃ¡i gá»­i lÃªn
     const validStatuses = [
       'PENDING',
       'ACCEPTED',
@@ -368,31 +412,31 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       'COMPLETED',
     ];
     if (!validStatuses.includes(status)) {
-      throw new BadRequestException('Trạng thái cập nhật không hợp lệ!');
+      throw new BadRequestException('Tráº¡ng thÃ¡i cáº­p nháº­t khÃ´ng há»£p lá»‡!');
     }
 
-    // 3. Phân quyền: Bệnh nhân chỉ được tự hủy lịch của mình (CANCELLED only)
+    // 3. PhÃ¢n quyá»n: Bá»‡nh nhÃ¢n chá»‰ Ä‘Æ°á»£c tá»± há»§y lá»‹ch cá»§a mÃ¬nh (CANCELLED only)
     if (user.role === 'PATIENT') {
       if (appointment.patientId !== user.sub) {
-        throw new ForbiddenException('Bạn chỉ có thể hủy lịch của chính mình!');
+        throw new ForbiddenException('Báº¡n chá»‰ cÃ³ thá»ƒ há»§y lá»‹ch cá»§a chÃ­nh mÃ¬nh!');
       }
       if (status !== 'CANCELLED') {
-        throw new ForbiddenException('Bệnh nhân chỉ được phép hủy lịch hẹn!');
+        throw new ForbiddenException('Bá»‡nh nhÃ¢n chá»‰ Ä‘Æ°á»£c phÃ©p há»§y lá»‹ch háº¹n!');
       }
       if (!['PENDING', 'CONFIRMED'].includes(appointment.status)) {
         throw new BadRequestException(
-          'Lịch hẹn này không thể hủy (đã hoàn thành hoặc đã hủy trước đó)!',
+          'Lá»‹ch háº¹n nÃ y khÃ´ng thá»ƒ há»§y (Ä‘Ã£ hoÃ n thÃ nh hoáº·c Ä‘Ã£ há»§y trÆ°á»›c Ä‘Ã³)!',
         );
       }
     }
 
     if (user.role === 'DOCTOR' && appointment.doctorId !== user.sub) {
       throw new ForbiddenException(
-        'Bác sĩ chỉ có thể cập nhật lịch của chính mình!',
+        'BÃ¡c sÄ© chá»‰ cÃ³ thá»ƒ cáº­p nháº­t lá»‹ch cá»§a chÃ­nh mÃ¬nh!',
       );
     }
 
-    // 4. Tiến hành cập nhật xuống MySQL Docker
+    // 4. Tiáº¿n hÃ nh cáº­p nháº­t xuá»‘ng MySQL Docker
     let updatedAppointment;
 
     if (status === 'CANCELLED') {
@@ -429,12 +473,12 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     );
 
     return {
-      message: `Cập nhật trạng thái lịch hẹn sang [${status}] thành công!`,
+      message: `Cáº­p nháº­t tráº¡ng thÃ¡i lá»‹ch háº¹n sang [${status}] thÃ nh cÃ´ng!`,
       data: updatedAppointment,
     };
   }
 
-  // Hoàn tất ca khám: Ghi chẩn đoán, kê đơn thuốc và đổi trạng thái thành COMPLETED
+  // HoÃ n táº¥t ca khÃ¡m: Ghi cháº©n Ä‘oÃ¡n, kÃª Ä‘Æ¡n thuá»‘c vÃ  Ä‘á»•i tráº¡ng thÃ¡i thÃ nh COMPLETED
   async completeConsultation(
     id: number,
     diagnosis: string,
@@ -443,7 +487,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   ) {
     if (user.role !== 'DOCTOR') {
       throw new ForbiddenException(
-        'Chỉ bác sĩ mới có quyền kê đơn và hoàn tất ca khám!',
+        'Chá»‰ bÃ¡c sÄ© má»›i cÃ³ quyá»n kÃª Ä‘Æ¡n vÃ  hoÃ n táº¥t ca khÃ¡m!',
       );
     }
 
@@ -451,12 +495,12 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       where: { id },
     });
     if (!appointment) {
-      throw new NotFoundException('Không tìm thấy lịch hẹn này!');
+      throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y lá»‹ch háº¹n nÃ y!');
     }
 
     if (appointment.doctorId !== user.sub) {
       throw new ForbiddenException(
-        'Bạn chỉ có thể kê đơn cho bệnh nhân của mình!',
+        'Báº¡n chá»‰ cÃ³ thá»ƒ kÃª Ä‘Æ¡n cho bá»‡nh nhÃ¢n cá»§a mÃ¬nh!',
       );
     }
 
@@ -466,11 +510,11 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
 
     if (existingPrescription) {
       throw new BadRequestException(
-        'Cuộc hẹn này đã được hoàn tất và kê đơn rồi!',
+        'Cuá»™c háº¹n nÃ y Ä‘Ã£ Ä‘Æ°á»£c hoÃ n táº¥t vÃ  kÃª Ä‘Æ¡n rá»“i!',
       );
     }
 
-    // Dùng transaction để đảm bảo lưu đơn thuốc và đổi status cùng lúc
+    // DÃ¹ng transaction Ä‘á»ƒ Ä‘áº£m báº£o lÆ°u Ä‘Æ¡n thuá»‘c vÃ  Ä‘á»•i status cÃ¹ng lÃºc
     const result = await this.prisma.$transaction(async (prisma) => {
       const verification = createPrescriptionVerification(
         {
@@ -485,7 +529,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
           'telehealth-local-prescription-key',
       );
 
-      // 1. Tạo đơn thuốc
+      // 1. Táº¡o Ä‘Æ¡n thuá»‘c
       const prescription = await prisma.prescription.create({
         data: {
           appointmentId: id,
@@ -495,7 +539,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      // 2. Cập nhật trạng thái cuộc hẹn
+      // 2. Cáº­p nháº­t tráº¡ng thÃ¡i cuá»™c háº¹n
       const updatedAppt = await prisma.appointment.update({
         where: { id },
         data: { status: 'COMPLETED' },
@@ -505,12 +549,12 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     });
 
     return {
-      message: 'Lưu chẩn đoán, đơn thuốc và hoàn tất ca khám thành công!',
+      message: 'LÆ°u cháº©n Ä‘oÃ¡n, Ä‘Æ¡n thuá»‘c vÃ  hoÃ n táº¥t ca khÃ¡m thÃ nh cÃ´ng!',
       data: result,
     };
   }
 
-  // Cổng đánh giá bác sĩ
+  // Cá»•ng Ä‘Ã¡nh giÃ¡ bÃ¡c sÄ©
   async submitReview(
     id: number,
     rating: number,
@@ -518,25 +562,25 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     user: { sub: number; role: string },
   ) {
     if (user.role !== 'PATIENT') {
-      throw new ForbiddenException('Chỉ bệnh nhân mới có quyền đánh giá!');
+      throw new ForbiddenException('Chá»‰ bá»‡nh nhÃ¢n má»›i cÃ³ quyá»n Ä‘Ã¡nh giÃ¡!');
     }
 
     const appointment = await this.prisma.appointment.findUnique({
       where: { id },
     });
     if (!appointment) {
-      throw new NotFoundException('Không tìm thấy lịch hẹn này!');
+      throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y lá»‹ch háº¹n nÃ y!');
     }
 
     if (appointment.patientId !== user.sub) {
       throw new ForbiddenException(
-        'Bạn chỉ có thể đánh giá ca khám của chính mình!',
+        'Báº¡n chá»‰ cÃ³ thá»ƒ Ä‘Ã¡nh giÃ¡ ca khÃ¡m cá»§a chÃ­nh mÃ¬nh!',
       );
     }
 
     if (appointment.status !== 'COMPLETED') {
       throw new BadRequestException(
-        'Chỉ có thể đánh giá sau khi ca khám đã hoàn tất!',
+        'Chá»‰ cÃ³ thá»ƒ Ä‘Ã¡nh giÃ¡ sau khi ca khÃ¡m Ä‘Ã£ hoÃ n táº¥t!',
       );
     }
 
@@ -545,11 +589,11 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (existingReview) {
-      throw new BadRequestException('Bạn đã đánh giá ca khám này rồi!');
+      throw new BadRequestException('Báº¡n Ä‘Ã£ Ä‘Ã¡nh giÃ¡ ca khÃ¡m nÃ y rá»“i!');
     }
 
     if (rating < 1 || rating > 5) {
-      throw new BadRequestException('Số sao đánh giá phải từ 1 đến 5!');
+      throw new BadRequestException('Sá»‘ sao Ä‘Ã¡nh giÃ¡ pháº£i tá»« 1 Ä‘áº¿n 5!');
     }
 
     const review = await this.prisma.review.create({
@@ -563,45 +607,45 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     });
 
     return {
-      message: 'Đánh giá thành công!',
+      message: 'ÄÃ¡nh giÃ¡ thÃ nh cÃ´ng!',
       data: review,
     };
   }
 
-  // HÀM MỚI TÍCH HỢP TỔNG HỢP BỆNH ÁN AI: Bốc toàn bộ lịch sử y tế của một Bệnh nhân
+  // HÃ€M Má»šI TÃCH Há»¢P Tá»”NG Há»¢P Bá»†NH ÃN AI: Bá»‘c toÃ n bá»™ lá»‹ch sá»­ y táº¿ cá»§a má»™t Bá»‡nh nhÃ¢n
   async getPatientMedicalHistory(
     patientId: number,
     user: { sub: number; role: string },
   ) {
     if (user.role === 'PATIENT' && user.sub !== patientId) {
       throw new ForbiddenException(
-        'Bạn chỉ có thể xem lịch sử của chính mình!',
+        'Báº¡n chá»‰ cÃ³ thá»ƒ xem lá»‹ch sá»­ cá»§a chÃ­nh mÃ¬nh!',
       );
     }
 
-    // Tìm tất cả các cuộc hẹn của bệnh nhân này và gom toàn bộ dữ liệu vệ tinh liên quan
+    // TÃ¬m táº¥t cáº£ cÃ¡c cuá»™c háº¹n cá»§a bá»‡nh nhÃ¢n nÃ y vÃ  gom toÃ n bá»™ dá»¯ liá»‡u vá»‡ tinh liÃªn quan
     const medicalHistory = await this.prisma.appointment.findMany({
       where: {
         patientId: patientId,
-        status: 'COMPLETED', // Chỉ lôi những ca khám đã hoàn thành xong xuôi
+        status: 'COMPLETED', // Chá»‰ lÃ´i nhá»¯ng ca khÃ¡m Ä‘Ã£ hoÃ n thÃ nh xong xuÃ´i
       },
       include: {
         doctor: {
           select: { fullName: true, email: true },
         },
-        prescriptions: true, // Đơn thuốc điện tử bác sĩ kê
-        vitalSigns: true, // Chỉ số kèm nguồn: nhập tay, Bluetooth hoặc mô phỏng
-        aiSummaries: true, // Tóm tắt cuộc thoại tự động của Trợ lý AI
-        callLogs: true, // Nhật ký cuộc gọi
+        prescriptions: true, // ÄÆ¡n thuá»‘c Ä‘iá»‡n tá»­ bÃ¡c sÄ© kÃª
+        vitalSigns: true, // Chá»‰ sá»‘ kÃ¨m nguá»“n: nháº­p tay, Bluetooth hoáº·c mÃ´ phá»ng
+        aiSummaries: true, // TÃ³m táº¯t cuá»™c thoáº¡i tá»± Ä‘á»™ng cá»§a Trá»£ lÃ½ AI
+        callLogs: true, // Nháº­t kÃ½ cuá»™c gá»i
       },
       orderBy: {
-        appointmentDate: 'desc', // Ca khám gần đây nhất đẩy lên đầu
+        appointmentDate: 'desc', // Ca khÃ¡m gáº§n Ä‘Ã¢y nháº¥t Ä‘áº©y lÃªn Ä‘áº§u
       },
     });
 
     return {
       message:
-        'Tải thành công lịch sử hồ sơ bệnh án điện tử tích hợp AI của bệnh nhân!',
+        'Táº£i thÃ nh cÃ´ng lá»‹ch sá»­ há»“ sÆ¡ bá»‡nh Ã¡n Ä‘iá»‡n tá»­ tÃ­ch há»£p AI cá»§a bá»‡nh nhÃ¢n!',
       data: medicalHistory,
     };
   }
@@ -677,7 +721,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       }
     } catch (error) {
       console.warn(
-        'Job nhắc lịch email gặp lỗi:',
+        'Job nháº¯c lá»‹ch email gáº·p lá»—i:',
         error instanceof Error ? error.message : 'Unknown error',
       );
     } finally {
@@ -741,3 +785,5 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     return `This action removes a #${id} appointment`;
   }
 }
+
+
