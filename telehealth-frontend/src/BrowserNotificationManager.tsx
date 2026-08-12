@@ -21,14 +21,50 @@ function installPeerConnectionCapture() {
     return;
   }
 
-  const originalAddTrack = RTCPeerConnection.prototype.addTrack;
-  RTCPeerConnection.prototype.addTrack = function (
+  const NativeRTCPeerConnection = window.RTCPeerConnection;
+  const originalAddTrack = NativeRTCPeerConnection.prototype.addTrack;
+
+  NativeRTCPeerConnection.prototype.addTrack = function (
     track: MediaStreamTrack,
     ...streams: MediaStream[]
   ) {
     window.__telehealthPeerConnection = this;
     return originalAddTrack.call(this, track, ...streams);
   };
+
+  const turnUrl = String(import.meta.env.VITE_TURN_URL ?? "").trim();
+  const turnUsername = String(import.meta.env.VITE_TURN_USERNAME ?? "").trim();
+  const turnCredential = String(import.meta.env.VITE_TURN_CREDENTIAL ?? "").trim();
+
+  const PatchedRTCPeerConnection = new Proxy(NativeRTCPeerConnection, {
+    construct(Target, args: [RTCConfiguration?]) {
+      const currentConfig = args[0] ?? {};
+      const existingIceServers = currentConfig.iceServers ?? [];
+      const extraIceServers: RTCIceServer[] = [];
+
+      if (turnUrl) {
+        extraIceServers.push({
+          urls: turnUrl,
+          ...(turnUsername ? { username: turnUsername } : {}),
+          ...(turnCredential ? { credential: turnCredential } : {}),
+        });
+      }
+
+      const pc = Reflect.construct(Target, [
+        {
+          ...currentConfig,
+          iceServers: [...existingIceServers, ...extraIceServers],
+        },
+      ]) as RTCPeerConnection;
+
+      window.__telehealthPeerConnection = pc;
+      return pc;
+    },
+  });
+
+  window.RTCPeerConnection = PatchedRTCPeerConnection as typeof RTCPeerConnection;
+  (globalThis as typeof globalThis & { RTCPeerConnection: typeof RTCPeerConnection }).RTCPeerConnection =
+    PatchedRTCPeerConnection as typeof RTCPeerConnection;
   window.__telehealthPeerPatched = true;
 }
 
