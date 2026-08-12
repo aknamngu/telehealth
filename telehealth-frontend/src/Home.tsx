@@ -167,6 +167,30 @@ function formatDoctorName(name?: string) {
   return `BS. ${trimmed}`;
 }
 
+const specialtyEn: Record<string, string> = {
+  'Tim mạch & Cấp cứu AI': 'Cardiology & AI Emergency Care',
+  'Nội tổng quát & Telehealth': 'General Medicine & Telehealth',
+  'Nhi khoa & Dinh dưỡng': 'Pediatrics & Nutrition',
+  'Da liễu & Khám từ xa': 'Dermatology & Telemedicine',
+  'Đa khoa': 'General Medicine',
+};
+
+const doctorBioEn: Record<string, string> = {
+  'Chuyên sâu về tim mạch, teletriage và giám sát sinh tồn theo thời gian thực.':
+    'Specialized in cardiology, tele-triage, and real-time vital-sign monitoring.',
+  'Phát triển quy trình chăm sóc từ xa, hồ sơ điện tử và điều trị đa bệnh lý.':
+    'Developing remote-care workflows, electronic health records, and multi-condition treatment.',
+  'Tối ưu chăm sóc trẻ em, tư vấn dinh dưỡng và theo dõi phát triển hằng tuần.':
+    'Optimizing pediatric care, nutrition counseling, and weekly development monitoring.',
+  'Xử lý các ca bệnh da liễu, đọc ảnh lâm sàng và hỗ trợ kê đơn chính xác.':
+    'Managing dermatology cases, reviewing clinical images, and supporting accurate prescribing.',
+};
+
+function localizeDbText(value: string, translations: Record<string, string>, language: string) {
+  if (language !== 'en') return value;
+  return translations[value.trim()] ?? value;
+}
+
 function Home() {
   const navigate = useNavigate();
   const { language } = useLanguage();
@@ -235,7 +259,7 @@ function Home() {
         const normalizedDoctors = records.map((doctor: any) => ({
           id: doctor.id,
           name: doctor.fullName,
-          specialty: doctor.doctorProfile?.specialty ?? tx('Đa khoa', 'General medicine'),
+          specialty: doctor.doctorProfile?.specialty ?? 'Đa khoa',
           bio: doctor.doctorProfile?.bio ?? '',
           yearsExp: doctor.doctorProfile?.experienceYears ?? 0,
           rating: doctor.rating ?? 5.0,
@@ -1084,7 +1108,7 @@ function Home() {
                   onClick={() => setSelectedSpecialty(spec === selectedSpecialty ? '' : spec)}
                   className={`rounded-full border px-4 py-2 text-xs font-bold transition ${selectedSpecialty === spec ? 'border-sky-500 bg-sky-500 text-white shadow-md shadow-sky-500/30' : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-700'}`}
                 >
-                  {spec}
+                  {localizeDbText(spec, specialtyEn, language)}
                 </button>
               ))}
             </div>
@@ -1095,7 +1119,7 @@ function Home() {
             <p className="mt-3 text-sm text-slate-500">
               {filteredDoctors.length === 0
                 ? tx('Không tìm thấy bác sĩ phù hợp.', 'No matching doctors found.')
-                : `${tx('Tìm thấy', 'Found')} ${filteredDoctors.length} ${tx('bác sĩ', 'doctor(s)')}${selectedSpecialty ? ` · ${selectedSpecialty}` : ''}${searchQuery ? ` · "${searchQuery}"` : ''}`}
+                : `${tx('Tìm thấy', 'Found')} ${filteredDoctors.length} ${tx('bác sĩ', 'doctor(s)')}${selectedSpecialty ? ` · ${localizeDbText(selectedSpecialty, specialtyEn, language)}` : ''}${searchQuery ? ` · "${searchQuery}"` : ''}`}
             </p>
           )}
 
@@ -1128,7 +1152,7 @@ function Home() {
                         <div className="text-center sm:text-left">
                           <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-sky-700">{tx('Chuyên gia', 'Specialist')}</p>
                           <h3 className="mt-1 text-lg font-black tracking-tight text-slate-950">{doctor.name}</h3>
-                          <p className="mt-1 text-sm font-medium text-slate-500">{doctor.specialty}</p>
+                          <p className="mt-1 text-sm font-medium text-slate-500">{localizeDbText(doctor.specialty, specialtyEn, language)}</p>
                         </div>
 
                         {/* Action button */}
@@ -1147,7 +1171,7 @@ function Home() {
                       <div className="flex-1 space-y-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-bold text-sky-700">
-                            {doctor.specialty}
+                            {localizeDbText(doctor.specialty, specialtyEn, language)}
                           </div>
                           <div className="flex items-center gap-1 rounded-full border border-amber-100 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
                             <Star className="h-3.5 w-3.5 fill-current" />
@@ -1156,8 +1180,9 @@ function Home() {
                         </div>
 
                         <p className="text-sm leading-7 text-slate-600">
-                          {doctor.bio ||
-                            tx('Ứng dụng y khoa từ xa để tối ưu tầm soát, tư vấn và điều trị kịp thời.', 'Using telemedicine to improve screening, consultation, and timely treatment.')}
+                          {doctor.bio
+                            ? localizeDbText(doctor.bio, doctorBioEn, language)
+                            : tx('Ứng dụng y khoa từ xa để tối ưu tầm soát, tư vấn và điều trị kịp thời.', 'Using telemedicine to improve screening, consultation, and timely treatment.')}
                         </p>
 
                         <div className="grid gap-3 sm:grid-cols-2">
