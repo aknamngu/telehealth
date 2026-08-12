@@ -9,13 +9,11 @@ import { Roles } from '../auth/roles.decorator';
 export class WalletController {
   constructor(private readonly walletService: WalletService) {}
 
-  // Lấy thông tin ví của mình
   @Get('me')
   getWallet(@Request() req: any) {
     return this.walletService.getWallet(req.user.sub);
   }
 
-  // Lấy danh sách hoá đơn của mình (Bệnh nhân)
   @Get('invoices/me')
   @Roles('PATIENT')
   @UseGuards(RolesGuard)
@@ -23,7 +21,13 @@ export class WalletController {
     return this.walletService.getMyInvoices(req.user.sub);
   }
 
-  // Lấy tất cả hoá đơn (Admin)
+  @Get('invoices/:id/payment-status')
+  @Roles('PATIENT')
+  @UseGuards(RolesGuard)
+  getInvoicePaymentStatus(@Param('id') id: string, @Request() req: any) {
+    return this.walletService.getInvoicePaymentStatus(+id, req.user.sub);
+  }
+
   @Get('invoices')
   @Roles('ADMIN')
   @UseGuards(RolesGuard)
@@ -31,7 +35,6 @@ export class WalletController {
     return this.walletService.getAllInvoices();
   }
 
-  // Xử lý duyệt hoàn tiền (Admin)
   @Post('invoices/:id/refund')
   @Roles('ADMIN')
   @UseGuards(RolesGuard)
