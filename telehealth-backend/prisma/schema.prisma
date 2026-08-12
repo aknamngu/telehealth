@@ -89,7 +89,8 @@ model Appointment {
   symptoms        String?                 @db.Text
   status          String                  // 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'
   createdAt       DateTime                @default(now())
-  reminderEmailSentAt DateTime?
+  reminderEmailSentAt    DateTime? // Mốc nhắc trước 24 giờ
+  reminder30mEmailSentAt DateTime? // Mốc nhắc trước 30 phút
 
   // Mối quan hệ
   patient         User                    @relation("PatientAppointments", fields: [patientId], references: [id])
